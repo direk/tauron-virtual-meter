@@ -1,4 +1,6 @@
 """A virtual counter with imported statistics owned by the sensor entity."""
+from datetime import date, timedelta
+
 from homeassistant.components.recorder.models import StatisticMeanType
 from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
@@ -34,6 +36,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         self._attr_native_value = None
         self._downloaded_energy_value = None
         self._last_measurement = None
+        self._first_measurement = None
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -45,13 +48,12 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         stats = await self.coordinator.statistics(self.direction)
         if not stats:
             return
-        from datetime import timedelta
-
         # Backfill changes the sum of downloaded data without representing
         # new consumption. Expose progress as an attribute, never as changes
         # to the main counter recorded at the time of the download.
         self._downloaded_energy_value = stats[-1]["state"]
         self._last_measurement = (stats[-1]["start"] + timedelta(hours=1)).isoformat()
+        self._first_measurement = stats[0]["start"].isoformat()
         if not self.coordinator.archive.get("complete"):
             self.async_write_ha_state()
             return
@@ -76,6 +78,9 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         profiles = archive["profiles"][self.direction]
         issues = archive["issues"]
         reading_issues = archive.get("reading_issues", {})
+        skipped = archive.get("history_skipped_months", {})
+        availability = archive.get("availability_months", {})
+        last_month = next(reversed(availability), None)
         remaining = max(0, (self.coordinator.history_cursor - self.coordinator.history_start).days + 1)
         return {
             "history_scan_complete": archive.get("complete", False),
@@ -88,6 +93,15 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "history_days_remaining": remaining,
             "downloaded_interval_count": sum(len(values) for values in profiles.values()),
             "empty_profile_day_count": sum(not values for values in profiles.values()),
+            "first_available_measurement": getattr(self, "_first_measurement", None),
+            "history_discovery_enabled": self.coordinator.entry.options.get("auto_detect_history", True),
+            "history_skipped_month_count": len(skipped),
+            "history_skipped_day_count": sum(
+                (date.fromisoformat(item["to"]) - date.fromisoformat(item["from"])).days + 1
+                for item in skipped.values()
+            ),
+            "last_availability_month": last_month,
+            "last_availability_result": availability.get(last_month) if last_month else None,
             "downloaded_energy_kwh": getattr(self, "_downloaded_energy_value", None),
             "recovered_profile_count": archive.get("recovered_profile_count", 0),
             "last_history_attempt": archive.get("last_history_attempt"),

@@ -45,6 +45,8 @@ async def async_setup_entry(hass, entry):
                     meter.archive["complete"] = False
                     meter._retry_after = None
                     meter.archive.pop("history_day_progress", None)
+                    meter.archive.pop("availability_months", None)
+                    meter.archive.pop("history_skipped_months", None)
                     meter.archive["history_connection_failures"] = 0
                     meter.archive["history_retry_after"] = None
                     meter.archive["history_retry_kind"] = None

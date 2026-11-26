@@ -16,6 +16,37 @@ def response(values):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_empty_month_summary_requires_daily_null_slots(self):
+        for count in (29, 30):
+            raw = {"success": True, "data": {"values": [None]*count, "sum": 0, "allData": []}}
+            self.assertEqual(model.month_summary_status(date(2024, 9, 1), raw), "empty")
+
+    def test_zero_measurements_are_available_not_empty(self):
+        raw = {"success": True, "data": {"values": [0]*30, "sum": 0}}
+        self.assertEqual(model.month_summary_status(date(2024, 9, 1), raw), "available")
+
+    def test_month_sum_zero_alone_does_not_prove_absence(self):
+        for values in ([], [None]*24, [False]*30, None):
+            raw = {"success": True, "data": {"values": values, "sum": 0}}
+            self.assertEqual(model.month_summary_status(date(2024, 9, 1), raw), "unknown")
+
+    def test_month_positive_sum_contradicts_empty_array(self):
+        raw = {"success": True, "data": {"values": [None]*30, "sum": 2.5}}
+        self.assertEqual(model.month_summary_status(date(2024, 9, 1), raw), "unknown")
+
+    def test_failed_or_unrecognized_month_response_is_not_empty(self):
+        for raw in ({"success": False}, {"success": True, "data": []}, [],
+                    {"success": True, "data": {"values": [None]*30, "allData": {}}}):
+            self.assertEqual(model.month_summary_status(date(2024, 9, 1), raw), "unknown")
+
+    def test_monthly_rows_with_zero_energy_prevent_skipping(self):
+        raw = {"success": True, "data": {"values": [None]*30, "sum": 0, "allData": [{"EC": "0"}]}}
+        self.assertEqual(model.month_summary_status(date(2024, 9, 1), raw), "available")
+
+    def test_leap_february_month_summary(self):
+        raw = {"success": True, "data": {"values": [None]*29}}
+        self.assertEqual(model.month_summary_status(date(2024, 2, 1), raw), "empty")
+
     def test_tauron_empty_day_with_23_nulls_and_24_labels_is_missing_not_zero(self):
         raw = json.loads((Path(__file__).parent / "fixtures/empty_profile.json").read_text())
         parsed = model.parse_day(date(2024, 9, 7), raw)

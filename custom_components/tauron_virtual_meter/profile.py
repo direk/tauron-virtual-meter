@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
@@ -30,6 +31,52 @@ def day_hours(day: date):
     start = datetime.combine(day, time(), WARSAW).astimezone(UTC)
     end = datetime.combine(day + timedelta(days=1), time(), WARSAW).astimezone(UTC)
     return [start + timedelta(hours=i) for i in range(int((end - start).total_seconds() / 3600))]
+
+
+def month_summary_status(day: date, response: dict) -> str:
+    """Classify a monthly chart conservatively, including zero as real data.
+
+    Only a recognizable, successful monthly response with exclusively null
+    daily slots can establish absence. Never use the aggregate sum alone.
+    Unsupported/contradictory shapes fall back to the daily scan.
+    """
+    if not isinstance(response, dict) or response.get("success") is not True:
+        return "unknown"
+    data = response.get("data")
+    if not isinstance(data, dict):
+        return "unknown"
+    rows = data.get("allData")
+    if rows is not None and not isinstance(rows, list):
+        return "unknown"
+    if rows:
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            return "unknown"
+        try:
+            if any(energy(row.get("EC")) is not None for row in rows):
+                return "available"
+        except ProfileError:
+            return "unknown"
+        # A separate non-empty row array is not a confirmed empty chart.
+        return "unknown"
+    values = data.get("values")
+    if not isinstance(values, list) or not values:
+        return "unknown"
+    try:
+        if any(energy(value) is not None for value in values):
+            return "available"
+    except ProfileError:
+        return "unknown"
+    count = monthrange(day.year, day.month)[1]
+    # The observed Tauron empty-chart convention may omit the final null.
+    if len(values) not in (count, count - 1) or any(value is not None for value in values):
+        return "unknown"
+    try:
+        total = energy(data.get("sum"))
+    except ProfileError:
+        return "unknown"
+    if total not in (None, 0):
+        return "unknown"
+    return "empty"
 
 
 def parse_day(day: date, response: dict):

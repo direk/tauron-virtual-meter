@@ -84,6 +84,13 @@ Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
 - `downloaded_interval_count` — liczba poprawnie odczytanych godzin dla tej encji.
 - `empty_profile_day_count` — liczba pobranych pustych dób dla tej encji
   (np. same wartości `null`); nie są one uznawane za zerowe zużycie.
+- `first_available_measurement` — najstarszy dotąd znaleziony pomiar tej encji;
+  podczas importu może się cofać. Po zakończeniu dotyczy całego sprawdzonego zakresu.
+- `history_discovery_enabled` — czy włączono sprawdzanie dostępności miesięcznej.
+- `history_skipped_month_count`, `history_skipped_day_count` — liczba miesięcy
+  i dni pominiętych po rozpoznaniu braku odczytów dla obu kierunków.
+- `last_availability_month`, `last_availability_result` — ostatni sprawdzony miesiąc
+  i wynik (`empty`, `available` albo `unknown`) dla poboru i oddania.
 - `downloaded_energy_kwh` — suma dotychczas pobranych pomiarów; podczas importu
   może rosnąć wskutek dodawania starszych dni i nie oznacza bieżącego zużycia.
 - `recovered_profile_count` — liczba zapisanych profili poboru/oddania odzyskanych
@@ -161,12 +168,40 @@ nie jest potrzebne.
 
 ## Synchronizacja i pełny dostępny okres
 
+Na gałęzi `main` po 0.0.4 dostępne jest domyślnie włączone **automatyczne
+wykrywanie dostępności historii**. Integracja sprawdza pełne zestawienie miesięczne
+poboru i oddania. Jeśli oba mają rozpoznawalny format i wyłącznie puste wartości
+`null`, omija pozostałe dni tego miesiąca i sprawdza miesiąc wcześniejszy. Nie
+kończy wyszukiwania na pierwszej przerwie, więc nadal może znaleźć starsze dane.
+W miesiącach z pomiarami pobierane są profile dobowe; na ich podstawie ustalana
+jest najstarsza dostępna godzina, osobno dla poboru i oddania.
+
+Zero kWh oznacza dostępny pomiar i nie powoduje pominięcia miesiąca. Samo `sum: 0`
+nie wystarcza. Błąd API, nieznany format, sprzeczne pola, znane już pomiary dobowe
+albo nierozwiązany błąd profilu powodują powrót do skanowania dobowego. Ostatni
+tydzień oraz bieżący miesiąc nie są pomijane tą metodą. Wyniki zestawień są
+przechowywane przez dobę i zapisywane w archiwum jako `availability.RRRR-MM.*`.
+
+To rozpoznawanie danych udostępnianych przez eLicznik w wybranym zakresie,
+nie ustalanie daty fizycznego montażu licznika. Zgodność odpowiedzi miesięcznych
+z profilem dobowym wymaga potwierdzenia na rzeczywistym koncie; nieznany format
+nie uruchamia optymalizacji. Jeśli zestawienia miesięczne nie są wiarygodne dla
+Twojego konta, wyłącz opcję w ustawieniach integracji. Pominięty zakres zostanie
+wtedy ponownie otwarty do sprawdzania dzień po dniu, z zachowaniem pobranych danych.
+Akcja pełnego skanowania również czyści pamięć wyników wykrywania.
+
+Pominięty miesiąc zachowuje odpowiedzi miesięczne i zakres pominięcia; nie tworzy
+sztucznych odczytów zerowych i nie pobiera osobnych profili ani rejestrów za każdy
+z tych dni. Licznik `empty_profile_day_count` dotyczy wyłącznie pobranych profili
+dobowych, a `history_skipped_day_count` dni pominiętych na podstawie zestawień.
+
 - Domyślnie aktualizacja co 60 minut. Ponownie pobierany jest bieżący dzień
   i siedem poprzednich dni: pozwala uzupełniać opóźnione dane i korekty.
 - Domyślnie zakres od **2000-01-01**: szerokie wyszukiwanie bez zatrzymywania
   się na pustych dniach. To dolna granica przeszukiwania, a nie wykryta data
   pierwszego pomiaru. Nie ma potwierdzonego endpointu zwracającego najstarszą datę.
-- Archiwum skanuje po 14 dni na minutę, chronologicznie wstecz. Duży zakres może
+- Archiwum przetwarza do 14 kroków na minutę, chronologicznie wstecz; krok to
+  jedna doba albo pominięcie pustej części miesiąca. Duży zakres może
   wymagać wielu godzin, a przy ograniczeniach Taurona — dłużej. Każdy dzień ma
   osobny zapis postępu. Po restarcie pobieranie jest kontynuowane.
 - Zakres oznacza wszystkie sprawdzone dni, również dni bez danych. Nie jest

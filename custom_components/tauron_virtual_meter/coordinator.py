@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 import logging
 
@@ -12,7 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import ApiError, ApiResponseError, AuthenticationError, RateLimitError, TauronAPI, TransientApiError
 from .const import DEFAULT_HISTORY_START, DEFAULT_INTERVAL, DOMAIN
-from .profile import ProfileError, WARSAW, cumulative_statistics, parse_day
+from .profile import ProfileError, WARSAW, cumulative_statistics, month_summary_status, parse_day
 from .storage import async_migrate_storage, storage_key
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,6 +52,12 @@ class MeterCoordinator(DataUpdateCoordinator):
         # If the configured lower bound moved earlier, resume below the previous bound.
         if date.fromisoformat(self.archive["cursor"]) >= self.history_start:
             self.archive["complete"] = False
+        if not self.entry.options.get("auto_detect_history", True) and self.archive.get("history_skipped_months"):
+            latest_skipped = max(item["to"] for item in self.archive["history_skipped_months"].values())
+            self.archive["cursor"] = max(self.archive["cursor"], latest_skipped)
+            self.archive["complete"] = False
+            self.archive.pop("history_skipped_months", None)
+            self.archive.pop("availability_months", None)
         await self.repair_cached_dates()
         # Preserve an explicit cooldown across restarts. Older versions had
         # no retry category and imposed an hour on every transient disconnect.
@@ -168,6 +175,64 @@ class MeterCoordinator(DataUpdateCoordinator):
                 await asyncio.sleep(0.5)
         await self.raw_save("meters", self.api.meters)
 
+    async def skip_empty_month(self, day):
+        """Use two monthly charts instead of four requests per empty day."""
+        if not self.entry.options.get("auto_detect_history", True):
+            return False
+        start = day.replace(day=1)
+        end = day.replace(day=monthrange(day.year, day.month)[1])
+        if end >= datetime.now(WARSAW).date() - timedelta(days=7):
+            return False  # Recent data may still be arriving.
+        month = day.strftime("%Y-%m")
+        if any(key.startswith(month) for key in self.archive["issues"]):
+            return False  # An unresolved raw profile can contain real measurements.
+        # Recorded hourly observations always override an empty summary.
+        if any(values for direction in ("consum", "oze")
+               for key, values in self.archive["profiles"][direction].items()
+               if key.startswith(month)):
+            return False
+        cache = self.archive.setdefault("availability_months", {})
+        summary = cache.get(month)
+        now = datetime.now(timezone.utc)
+        if summary is None or now - datetime.fromisoformat(summary["checked_at"]) >= timedelta(days=1):
+            summary = {"checked_at": now.isoformat()}
+            for direction in ("consum", "oze"):
+                self.archive["last_history_request"] = {
+                    "day": start.isoformat(), "to": end.isoformat(),
+                    "kind": "availability_month", "direction": direction,
+                }
+                try:
+                    response = await self.api.profile(start, end, direction, "month")
+                except ApiResponseError as err:
+                    summary[direction] = "unknown"
+                    await self.raw_save(f"availability.{month}.{direction}.error", {
+                        "request": self.archive["last_history_request"],
+                        "endpoint": err.endpoint, "response": err.response,
+                    })
+                else:
+                    await self.raw_save(f"availability.{month}.{direction}", response)
+                    summary[direction] = month_summary_status(start, response)
+                await asyncio.sleep(0.5)
+            cache[month] = summary
+            await self.store.async_save(self.archive)
+        if any(summary.get(direction) != "empty" for direction in ("consum", "oze")):
+            return False
+        first = max(start, self.history_start)
+        # Never infer that all older months are empty: the next iteration
+        # checks the preceding month, even across a gap in observations.
+        skipped = self.archive.setdefault("history_skipped_months", {})
+        previous = skipped.get(month)
+        skipped[month] = {
+            "from": min(first.isoformat(), previous["from"]) if previous else first.isoformat(),
+            "to": max(day.isoformat(), previous["to"]) if previous else day.isoformat(),
+            "checked_at": summary["checked_at"],
+        }
+        self.archive["cursor"] = (first - timedelta(days=1)).isoformat()
+        self.archive.pop("history_day_progress", None)
+        self.archive["history_connection_failures"] = 0
+        await self.store.async_save(self.archive)
+        return True
+
     async def _async_update_data(self):
         async with self.lock:
             try:
@@ -224,6 +289,8 @@ class MeterCoordinator(DataUpdateCoordinator):
                     if day < self.history_start:
                         self.archive["complete"] = True
                         break
+                    if await self.skip_empty_month(day):
+                        continue
                     await self.download_day(day, resume=True)
                     # Daily register responses are archived too; no unproven
                     # assumptions about the register timestamp are used in sums.

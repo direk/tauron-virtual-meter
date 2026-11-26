@@ -12,11 +12,12 @@
       },
       "meter": {
         "title": "Wirtualny licznik",
-        "description": "Historia będzie przeszukiwana dzień po dniu do wskazanej daty. Wybierz 2000-01-01, aby objąć szerszy okres. Puste dni nie kończą wyszukiwania.",
+        "description": "Historia będzie przeszukiwana do wskazanej daty. Automatyczne wykrywanie sprawdza zestawienia miesięczne i pomija miesiące bez odczytów dla poboru i oddania. Nie kończy wyszukiwania na pierwszej przerwie w danych.",
         "data": {
           "meter_id": "Licznik",
           "history_start": "Początek przeszukiwania historii",
-          "interval_minutes": "Odstęp synchronizacji w minutach (0 = własna automatyzacja)"
+          "interval_minutes": "Odstęp synchronizacji w minutach (0 = własna automatyzacja)",
+          "auto_detect_history": "Automatycznie wykrywaj dostępność i pomijaj puste miesiące"
         }
       }
     },
@@ -38,7 +39,8 @@
         "description": "0 wyłącza okresowe odświeżanie. Początkowe pobieranie archiwum trwa w tle. Przesunięcie daty wstecz rozszerza wyszukiwanie; przesunięcie naprzód nie usuwa archiwum.",
         "data": {
           "history_start": "Początek przeszukiwania historii",
-          "interval_minutes": "Odstęp synchronizacji w minutach (0 = własna automatyzacja)"
+          "interval_minutes": "Odstęp synchronizacji w minutach (0 = własna automatyzacja)",
+          "auto_detect_history": "Automatycznie wykrywaj dostępność i pomijaj puste miesiące"
         }
       }
     },

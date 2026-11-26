@@ -58,7 +58,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         # Remove adapter submodules too; subsequent cases receive fresh doubles.
         self.addCleanup(lambda: [sys.modules.pop(key, None) for key in list(sys.modules)
                                  if key.startswith("test_tauron_adapter.")])
-        self.entry = types.SimpleNamespace(options={"history_start": "2026-11-20"},
+        self.entry = types.SimpleNamespace(options={"history_start": "2026-11-20", "auto_detect_history": False},
             entry_id="test", data={"username": "name", "password": "secret", "meter_id": "123"})
         self.coordinator = self.module.MeterCoordinator(types.SimpleNamespace(), self.entry, object())
         self.coordinator.archive = {"profiles": {"consum": {}, "oze": {}}, "issues": {},
@@ -491,6 +491,118 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(factory.call_args.args[2],
                          "tauron_virtual_meter/tauron_virtual_meter.test.2025-01-13.consum")
         store.async_save.assert_awaited_once_with({"data": []})
+
+    def prepare_month_discovery(self, start="2024-01-01", cursor="2024-09-07"):
+        meter = self.coordinator
+        self.entry.options.update({"history_start": start, "auto_detect_history": True})
+        meter.archive["cursor"] = cursor
+        meter.api.profile = AsyncMock(return_value={"success": True, "data": {"values": [None]*30, "sum": 0}})
+        meter.raw_save = AsyncMock()
+        return meter
+
+    async def test_month_discovery_skips_only_remaining_empty_days(self):
+        meter = self.prepare_month_discovery()
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            self.assertTrue(await meter.skip_empty_month(date(2024, 9, 7)))
+        self.assertEqual(meter.archive["cursor"], "2024-08-31")
+        self.assertEqual(meter.api.profile.await_count, 2)
+        self.assertEqual(meter.archive["history_skipped_months"]["2024-09"]["from"], "2024-09-01")
+        self.assertEqual(meter.archive["history_skipped_months"]["2024-09"]["to"], "2024-09-07")
+        self.assertEqual(meter.archive["profiles"]["consum"], {})
+
+    async def test_month_discovery_respects_configured_lower_bound(self):
+        meter = self.prepare_month_discovery(start="2024-09-05")
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter.skip_empty_month(date(2024, 9, 7))
+        self.assertEqual(meter.archive["cursor"], "2024-09-04")
+        self.assertEqual(meter.archive["history_skipped_months"]["2024-09"]["from"], "2024-09-05")
+
+    async def test_month_summary_is_cached_and_skipped_ranges_are_not_double_counted(self):
+        meter = self.prepare_month_discovery()
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter.skip_empty_month(date(2024, 9, 7))
+            await meter.skip_empty_month(date(2024, 9, 6))
+        self.assertEqual(meter.api.profile.await_count, 2)
+        self.assertEqual(meter.archive["history_skipped_months"]["2024-09"]["to"], "2024-09-07")
+
+    async def test_known_hourly_zero_overrides_empty_month_summary(self):
+        meter = self.prepare_month_discovery()
+        meter.archive["profiles"]["consum"]["2024-09-10"] = {"2024-09-09T22:00:00+00:00": "0"}
+        self.assertFalse(await meter.skip_empty_month(date(2024, 9, 7)))
+        meter.api.profile.assert_not_awaited()
+
+    async def test_generation_only_month_is_not_skipped(self):
+        meter = self.prepare_month_discovery()
+        meter.api.profile.side_effect = [
+            {"success": True, "data": {"values": [None]*30}},
+            {"success": True, "data": {"values": [0]*30}},
+        ]
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            self.assertFalse(await meter.skip_empty_month(date(2024, 9, 7)))
+        self.assertEqual(meter.archive["cursor"], "2024-09-07")
+
+    async def test_unresolved_daily_profile_error_prevents_month_skip(self):
+        meter = self.prepare_month_discovery()
+        meter.archive["issues"]["2024-09-07.oze"] = "Unknown profile resolution or ambiguous DST day"
+        self.assertFalse(await meter.skip_empty_month(date(2024, 9, 7)))
+        meter.api.profile.assert_not_awaited()
+
+    async def test_sensor_reports_skipped_days_and_oldest_found_measurement(self):
+        sensor, _ = self.make_sensor()
+        meter = self.prepare_month_discovery()
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter.skip_empty_month(date(2024, 9, 7))
+        await sensor.import_statistics()
+        attributes = sensor.extra_state_attributes
+        self.assertEqual(attributes["history_skipped_day_count"], 7)
+        self.assertEqual(attributes["history_skipped_month_count"], 1)
+        self.assertEqual(attributes["last_availability_result"]["consum"], "empty")
+        self.assertEqual(attributes["first_available_measurement"], "2026-11-20T00:00:00+00:00")
+
+    async def test_rejected_month_summary_falls_back_to_daily_scan(self):
+        meter = self.prepare_month_discovery()
+        meter.api.profile.side_effect = self.api_module.ApiResponseError("/energia/api", {"success": False})
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            self.assertFalse(await meter.skip_empty_month(date(2024, 9, 7)))
+        self.assertEqual(meter.archive["availability_months"]["2024-09"]["consum"], "unknown")
+        self.assertEqual(meter.archive["cursor"], "2024-09-07")
+
+    async def test_month_probe_rate_limit_does_not_skip_days(self):
+        meter = self.prepare_month_discovery()
+        meter.api.profile.side_effect = self.api_module.RateLimitError("limit")
+        with self.assertRaises(self.api_module.RateLimitError):
+            await meter.skip_empty_month(date(2024, 9, 7))
+        self.assertEqual(meter.archive["cursor"], "2024-09-07")
+
+    async def test_daily_import_finds_older_data_after_empty_month(self):
+        meter = self.prepare_month_discovery(start="2024-01-31", cursor="2024-02-29")
+
+        async def profile(start, end, direction, period="full time"):
+            if period == "month":
+                count = self.module.monthrange(start.year, start.month)[1]
+                values = [None]*count if start.month == 2 else [0]*count
+                return {"success": True, "data": {"values": values, "sum": 0}}
+            return {"success": True, "data": {"values": ["0.1"]*24}}
+
+        meter.api = types.SimpleNamespace(select=AsyncMock(), profile=AsyncMock(side_effect=profile), readings=AsyncMock(return_value={"success": True, "data": []}))
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter.history_tick()
+        self.assertTrue(meter.archive["complete"])
+        self.assertEqual(meter.archive["cursor"], "2024-01-30")
+        self.assertEqual(len(meter.archive["profiles"]["consum"]["2024-01-31"]), 24)
+        self.assertEqual(meter.api.readings.await_count, 2)
+        self.assertEqual(meter.api.profile.await_count, 6)  # Four summaries, two daily profiles.
+
+    async def test_disabling_discovery_reopens_skipped_period(self):
+        meter = self.prepare_month_discovery()
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter.skip_empty_month(date(2024, 9, 7))
+        self.entry.options["auto_detect_history"] = False
+        meter.store.async_load = AsyncMock(return_value=meter.archive)
+        await meter.load()
+        self.assertEqual(meter.archive["cursor"], "2024-09-07")
+        self.assertNotIn("history_skipped_months", meter.archive)
+        self.assertFalse(meter.archive["complete"])
 
 
 if __name__ == "__main__":

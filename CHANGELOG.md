@@ -1,5 +1,16 @@
 # Historia zmian
 
+## Niewydane — main
+
+- Dodano automatyczne sprawdzanie dostępności danych w zestawieniach miesięcznych
+  poboru i oddania, z pomijaniem rozpoznanych pustych miesięcy. Wyszukiwanie nie
+  kończy się na pierwszym pustym miesiącu i nie traktuje zera jako braku odczytu.
+- Nieznany format lub sprzeczność z profilem dobowym pozostawia skanowanie dobowe.
+  Opcję można wyłączyć; wcześniej pominięty zakres zostanie sprawdzony ponownie.
+- Dodano najstarszy znaleziony pomiar i liczniki pominiętych miesięcy/dni w atrybutach.
+- Weryfikacja: 77 testów lokalnych. Brak testu nowych zapytań miesięcznych na
+  rzeczywistym koncie Taurona; nieznany format odpowiedzi oznacza zwykły skan dobowy.
+
 ## 0.0.4 — 2026-11-26
 
 - Puste profile (np. 23 wartości `null` i 24 etykiety godzin) są rozpoznawane

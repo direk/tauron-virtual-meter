@@ -1,4 +1,4 @@
-# Tauron Virtual Meter — wersja 0.0.4
+# Tauron Virtual Meter — wersja 0.0.5
 
 <img src="custom_components/tauron_virtual_meter/brand/icon@2x.png" alt="Ikona Tauron Virtual Meter — licznik energii z akcentami magenta" width="128" height="128">
 
@@ -14,12 +14,12 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
-**Aktualizacja do 0.0.4:** zainstaluj nowe wydanie i uruchom ponownie Home Assistant.
+**Aktualizacja do 0.0.5:** zainstaluj nowe wydanie i uruchom ponownie Home Assistant.
 Archiwum zostanie automatycznie przeniesione do `/config/.storage/tauron_virtual_meter/`,
 z zachowaniem pomiarów oraz postępu importu. Zapisane profile odrzucone przez
 wcześniejszą kontrolę daty zostaną ponownie przeliczone. Nie usuwaj wpisu integracji,
 nie przenoś plików ręcznie i nie uruchamiaj skanowania od początku.
-Wersja 0.0.4 wznawia też import zatrzymany na dodatkowym odczycie rejestru;
+Wersja 0.0.5 wznawia też import zatrzymany na dodatkowym odczycie rejestru;
 odrzucone rejestry są widoczne jako ostrzeżenia i nie blokują pobierania profili.
 Szczegóły zmian znajdują się w [historii zmian](CHANGELOG.md).
 
@@ -29,8 +29,8 @@ Kliknij przycisk, wybierz swój Home Assistant i potwierdź dodanie repozytorium
 w HACS. Następnie zainstaluj integrację i uruchom ponownie Home Assistant.
 Przycisk wymaga skonfigurowanego HACS.
 
-Paczka instalacyjna: [wydanie 0.0.4](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.4).
-Rozpakuj plik `tauron_virtual_meter-0.0.4.zip`, a następnie:
+Paczka instalacyjna: [wydanie 0.0.5](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.5).
+Rozpakuj plik `tauron_virtual_meter-0.0.5.zip`, a następnie:
 
 1. Skopiuj katalog `custom_components/tauron_virtual_meter` do
    `/config/custom_components/tauron_virtual_meter` na urządzeniu z Home Assistant.
@@ -168,7 +168,7 @@ nie jest potrzebne.
 
 ## Synchronizacja i pełny dostępny okres
 
-Na gałęzi `main` po 0.0.4 dostępne jest domyślnie włączone **automatyczne
+Od wersji 0.0.5 dostępne jest domyślnie włączone **automatyczne
 wykrywanie dostępności historii**. Integracja sprawdza pełne zestawienie miesięczne
 poboru i oddania. Jeśli oba mają rozpoznawalny format i wyłącznie puste wartości
 `null`, omija pozostałe dni tego miesiąca i sprawdza miesiąc wcześniejszy. Nie
@@ -272,7 +272,7 @@ licznika. Nie obejmuje faktur, umów, płatności ani nieodkrytych endpointów M
 Nie pobiera historycznych zestawień miesiąc/rok: zachowuje ich dokładniejsze
 profile dobowe i ostatnie zestawienia kontrolne.
 
-Wersja 0.0.4 importuje **profile godzinowe** zgodnie z numeracją `Hour` od 1
+Wersja 0.0.5 importuje **profile godzinowe** zgodnie z numeracją `Hour` od 1
 znaną z integracji źródłowej. Godziny przeliczane są z Europe/Warsaw na UTC.
 Każde zapytanie o profil dotyczy jednego dnia (`from == to`); używana jest data
 tego zapytania, tak jak w Tauron AMIplus. Pole `Date` poszczególnych wierszy

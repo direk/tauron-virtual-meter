@@ -1,6 +1,6 @@
 # Historia zmian
 
-## Niewydane — main
+## 0.0.5 — 2026-11-26
 
 - Dodano automatyczne sprawdzanie dostępności danych w zestawieniach miesięcznych
   poboru i oddania, z pomijaniem rozpoznanych pustych miesięcy. Wyszukiwanie nie

@@ -1,0 +1,17 @@
+{
+  "domain": "tauron_virtual_meter",
+  "name": "Tauron Virtual Meter",
+  "version": "0.0.1",
+  "config_flow": true,
+  "dependencies": [
+    "recorder"
+  ],
+  "requirements": [],
+  "codeowners": [
+    "@direk"
+  ],
+  "documentation": "https://github.com/direk/tauron-virtual-meter",
+  "iot_class": "cloud_polling",
+  "integration_type": "hub",
+  "issue_tracker": "https://github.com/direk/tauron-virtual-meter/issues"
+}

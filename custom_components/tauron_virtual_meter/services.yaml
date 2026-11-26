@@ -1,0 +1,20 @@
+sync:
+  name: Synchronizuj dane
+  description: Pobierz najnowsze odczyty i ponownie sprawdź ostatnie siedem dni.
+  fields:
+    entry_id:
+      name: Integracja
+      required: true
+      selector:
+        config_entry:
+          integration: tauron_virtual_meter
+rescan_history:
+  name: Ponownie przeskanuj historię
+  description: Wznów sprawdzanie całego okresu od wczoraj do daty ustawionej w opcjach.
+  fields:
+    entry_id:
+      name: Integracja
+      required: true
+      selector:
+        config_entry:
+          integration: tauron_virtual_meter

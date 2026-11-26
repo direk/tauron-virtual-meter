@@ -1,6 +1,6 @@
 # Historia zmian
 
-## Niewydane — main
+## 0.0.4 — 2026-11-26
 
 - Puste profile (np. 23 wartości `null` i 24 etykiety godzin) są rozpoznawane
   jako brak pomiarów, bez błędu rozdzielczości i bez tworzenia zerowych odczytów.

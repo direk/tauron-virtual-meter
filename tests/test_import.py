@@ -27,6 +27,9 @@ class FakeCoordinator:
     def async_set_updated_data(self, data):
         self.data = data
 
+    def async_update_listeners(self):
+        self.listeners_updated = True
+
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -79,6 +82,10 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(meter.archive["cursor"], "2026-11-20")
         self.assertFalse(meter.archive["complete"])
         self.assertIsNotNone(meter._retry_after)
+        self.assertEqual(meter.archive["last_history_error"], "offline")
+        self.assertEqual(meter.archive["history_retry_after"], meter._retry_after.isoformat())
+        self.assertTrue(meter.listeners_updated)
+        self.assertIsNotNone(meter.store.saved["last_history_attempt"])
 
     async def test_partial_update_keeps_prior_readings_and_flags_issue(self):
         meter = self.coordinator
@@ -118,7 +125,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(self.api_module.ApiError):
             await api.profile(date(2026, 11, 20), date(2026, 11, 20))
 
-    async def test_statistics_are_owned_by_sensor_not_external_source(self):
+    def make_sensor(self):
         modules = {}
         for name in ("homeassistant.components", "homeassistant.components.recorder",
                      "homeassistant.components.recorder.models", "homeassistant.components.recorder.statistics",
@@ -146,6 +153,10 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             "start": self.module.datetime(2026, 11, 20, tzinfo=self.module.timezone.utc),
             "state": 2.5, "sum": 2.5,
         }])
+        return sensor, imports
+
+    async def test_statistics_are_owned_by_sensor_not_external_source(self):
+        sensor, imports = self.make_sensor()
         await sensor.import_statistics()
         metadata, rows = imports[0][1:]
         self.assertEqual(metadata["statistic_id"], "sensor.my_virtual_meter")
@@ -153,6 +164,41 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(sensor._attr_state_class)
         self.assertEqual([row["sum"] for row in rows], [0.0, 2.5])
         self.assertEqual(sensor._attr_native_value, 2.5)
+
+    async def test_sensor_shows_partial_value_without_waiting_for_history(self):
+        sensor, imports = self.make_sensor()
+        self.coordinator.archive["complete"] = False
+        await sensor.import_statistics()
+        self.assertEqual(sensor._attr_native_value, 2.5)
+        self.assertEqual(imports, [])
+        self.assertTrue(sensor.extra_state_attributes["value_is_partial"])
+        self.assertEqual(sensor.extra_state_attributes["history_days_remaining"], 1)
+
+    async def test_partial_archive_is_exported_to_sensors(self):
+        self.coordinator.archive["complete"] = False
+        exporter = AsyncMock()
+        self.coordinator.exporters.append(exporter)
+        await self.coordinator.export()
+        exporter.assert_awaited_once()
+
+    async def test_empty_archive_does_not_invent_zero(self):
+        sensor, imports = self.make_sensor()
+        sensor._attr_native_value = None
+        self.coordinator.archive["complete"] = False
+        self.coordinator.statistics = AsyncMock(return_value=[])
+        await sensor.import_statistics()
+        self.assertIsNone(sensor._attr_native_value)
+        self.assertEqual(imports, [])
+
+    async def test_failed_history_reports_error_and_preserves_partial_values(self):
+        meter = self.coordinator
+        meter.api = types.SimpleNamespace(select=AsyncMock())
+        meter.download_day = AsyncMock(side_effect=self.api_module.ApiError("offline"))
+        exporter = AsyncMock()
+        meter.exporters.append(exporter)
+        await meter.history_tick()
+        exporter.assert_awaited_once()
+        self.assertTrue(meter.listeners_updated)
 
 
 if __name__ == "__main__":

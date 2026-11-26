@@ -36,6 +36,10 @@ class MeterCoordinator(DataUpdateCoordinator):
     def history_start(self):
         return date.fromisoformat(self.entry.options.get("history_start", DEFAULT_HISTORY_START))
 
+    @property
+    def history_cursor(self):
+        return date.fromisoformat(self.archive["cursor"])
+
     async def load(self):
         self.archive = await self.store.async_load() or {
             "profiles": {"consum": {}, "oze": {}}, "issues": {},
@@ -126,10 +130,11 @@ class MeterCoordinator(DataUpdateCoordinator):
         if self._retry_after and datetime.now(timezone.utc) < self._retry_after:
             return
         async with self.lock:
+            self.archive["last_history_attempt"] = datetime.now(timezone.utc).isoformat()
             try:
                 await self.api.select(self.entry.data["meter_id"])
                 for _ in range(14):
-                    day = date.fromisoformat(self.archive["cursor"])
+                    day = self.history_cursor
                     if day < self.history_start:
                         self.archive["complete"] = True
                         break
@@ -142,22 +147,36 @@ class MeterCoordinator(DataUpdateCoordinator):
                         await asyncio.sleep(0.5)
                     self.archive["cursor"] = (day - timedelta(days=1)).isoformat()
                     await self.store.async_save(self.archive)
+                self.archive["last_history_error"] = None
+                self.archive["history_retry_after"] = None
+                self._retry_after = None
                 await self.store.async_save(self.archive)
                 await self.export()
                 self.async_set_updated_data(self.archive)
             except AuthenticationError:
                 self._retry_after = datetime.now(timezone.utc) + timedelta(hours=1)
+                self.archive["last_history_error"] = "AuthenticationError: credentials rejected"
+                self.archive["history_retry_after"] = self._retry_after.isoformat()
+                await self.store.async_save(self.archive)
+                self.async_update_listeners()
                 self.entry.async_start_reauth(self.hass)
-            except (ApiError, ClientError, OSError, ValueError):
+            except (ApiError, ClientError, OSError, ValueError) as err:
                 self._retry_after = datetime.now(timezone.utc) + timedelta(hours=1)
-                _LOGGER.warning("Import historii wstrzymany na godzinę; postęp zachowano")
+                # Only our fixed-message API errors are exposed; third-party
+                # exception text can contain request details.
+                reason = str(err) if isinstance(err, ApiError) else type(err).__name__
+                self.archive["last_history_error"] = reason
+                self.archive["history_retry_after"] = self._retry_after.isoformat()
+                await self.store.async_save(self.archive)
+                await self.export()
+                self.async_update_listeners()
+                _LOGGER.warning("Import historii wstrzymany na godzinę (%s); postęp zachowano", reason)
 
     async def export(self):
-        # Historical extension changes a counter's origin. Publish once the
-        # initial scan finishes, then rebuild on correction/refresh.
-        if self.archive.get("complete"):
-            for exporter in tuple(self.exporters):
-                await exporter()
+        # Sensors expose partial values immediately. Each exporter still waits
+        # for scan completion before committing the final historical origin.
+        for exporter in tuple(self.exporters):
+            await exporter()
 
     async def statistics(self, direction):
         return await self.hass.async_add_executor_job(

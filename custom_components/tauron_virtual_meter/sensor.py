@@ -41,10 +41,17 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         await self.import_statistics()
 
     async def import_statistics(self):
-        if not self.coordinator.archive.get("complete"):
-            return
         stats = await self.coordinator.statistics(self.direction)
         if not stats:
+            return
+        from datetime import timedelta
+
+        # The current value must not wait for the entire historical scan.
+        # It is explicitly marked partial until that scan has finished.
+        self._attr_native_value = stats[-1]["state"]
+        self._last_measurement = (stats[-1]["start"] + timedelta(hours=1)).isoformat()
+        self.async_write_ha_state()
+        if not self.coordinator.archive.get("complete"):
             return
         metadata = {
             "statistic_id": self.entity_id, "source": "recorder",
@@ -54,18 +61,17 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         }
         # The baseline is synthetic, not a measured value; it preserves the
         # first interval in difference-based charts.
-        from datetime import timedelta
         baseline = {"start": stats[0]["start"] - timedelta(hours=1), "state": 0.0, "sum": 0.0}
         rows = [baseline, *stats]
         for offset in range(0, len(rows), 1000):
             async_import_statistics(self.hass, metadata, rows[offset:offset + 1000])
-        self._attr_native_value = stats[-1]["state"]
-        self._last_measurement = (stats[-1]["start"] + timedelta(hours=1)).isoformat()
-        self.async_write_ha_state()
 
     @property
     def extra_state_attributes(self):
         archive = self.coordinator.archive
+        profiles = archive["profiles"][self.direction]
+        issues = archive["issues"]
+        remaining = max(0, (self.coordinator.history_cursor - self.coordinator.history_start).days + 1)
         return {
             "history_scan_complete": archive.get("complete", False),
             "history_scan_next_day": archive["cursor"],
@@ -73,5 +79,12 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "last_successful_sync": archive.get("last_sync"),
             "last_measurement_end": self._last_measurement,
             "profile_issue_count": len(archive["issues"]),
+            "value_is_partial": not archive.get("complete", False),
+            "history_days_remaining": remaining,
+            "downloaded_interval_count": sum(len(values) for values in profiles.values()),
+            "last_history_attempt": archive.get("last_history_attempt"),
+            "last_history_error": archive.get("last_history_error"),
+            "history_retry_after": archive.get("history_retry_after"),
+            "last_profile_issue": next(reversed(issues.values()), None),
             "counter_origin": "zero_before_first_available_interval",
         }

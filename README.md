@@ -12,6 +12,13 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
+**Poprawka po pierwszym wydaniu 0.0.1:** kod na gałęzi `main` pokazuje pobrane
+wartości jeszcze podczas importu historii i udostępnia diagnostykę postępu.
+Wersja pozostaje 0.0.1. Aby otrzymać tę poprawkę bez nowego wydania, pobierz
+[aktualny kod](https://github.com/direk/tauron-virtual-meter/archive/refs/heads/main.zip),
+podmień katalog `/config/custom_components/tauron_virtual_meter` i uruchom
+ponownie Home Assistant. Nie usuwaj wpisu integracji ani plików `.storage`.
+
 [![Dodaj repozytorium do Home Assistant przez HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=direk&repository=tauron-virtual-meter&category=integration)
 
 Kliknij przycisk, wybierz swój Home Assistant i potwierdź dodanie repozytorium
@@ -49,9 +56,27 @@ oddzielnie, bez zgadywania godzin, do których się odnoszą.
 
 Sensor celowo nie deklaruje `state_class`: automatyczne statystyki HA nie mogą
 równolegle naliczać spóźnionych danych w momencie ich pobrania. Statystyki importuje
-wyłącznie integracja, z datami pomiarów. Po pierwszym pełnym skanowaniu publikuje
-stan i całą historię. W trakcie skanowania stan pozostaje `unknown`; atrybut
-`history_scan_next_day` pokazuje postęp. Puste odpowiedzi nie kończą wyszukiwania.
+wyłącznie integracja, z datami pomiarów. Pobrane wartości są widoczne od razu,
+także podczas skanowania. Wtedy `value_is_partial: true` oznacza sumę dotychczas
+pobranych pomiarów, która może rosnąć również przy uzupełnianiu starszych dni.
+Po pełnym skanowaniu publikowana jest cała historia godzinowa. Stan pozostaje
+`unknown` tylko wtedy, gdy nie ma jeszcze żadnych poprawnie odczytanych pomiarów.
+Puste odpowiedzi nie kończą wyszukiwania.
+
+Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
+
+- `history_scan_next_day` — dzień, od którego będzie kontynuowany import.
+- `history_days_remaining` — liczba dni pozostałych do sprawdzenia.
+- `downloaded_interval_count` — liczba poprawnie odczytanych godzin dla tej encji.
+- `last_history_attempt` — ostatnia próba pobrania archiwum.
+- `last_history_error` i `history_retry_after` — powód oraz czas ponowienia po błędzie.
+- `profile_issue_count` i `last_profile_issue` — problemy z interpretacją profili.
+- `last_successful_sync` — czas ostatniej udanej synchronizacji bieżących danych.
+
+Jeśli `history_scan_next_day` się zmienia, import trwa. Jeśli nie zmienia się,
+sprawdź ostatni błąd i czas ponowienia. Jeśli `downloaded_interval_count` wynosi
+zero, a `profile_issue_count` rośnie, format odpowiedzi wymaga sprawdzenia;
+samo czekanie na zakończenie skanowania nie rozwiąże tego problemu.
 
 Przykładowa karta Lovelace — zastąp identyfikator encji swoim:
 

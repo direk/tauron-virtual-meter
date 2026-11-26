@@ -1,5 +1,15 @@
 # Historia zmian
 
+## Poprawki na main po 0.0.1 (bez zmiany wersji)
+
+- Sensory pokazują częściową sumę dostępnych pomiarów od razu, bez czekania
+  na zakończenie skanowania całego okresu.
+- Atrybuty encji pokazują liczbę pobranych godzin, pozostałych dni oraz ostatni
+  błąd importu i termin ponowienia.
+- Dane częściowe nie trafiają do końcowej historii statystyk, dopóki nie zostanie
+  ustalony początek licznika po zakończeniu skanowania.
+- Dodano testy publikowania częściowych danych i diagnostyki błędów.
+
 ## 0.0.1 — 2026-11-26
 
 Pierwsza wersja testowa integracji Home Assistant.

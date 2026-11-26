@@ -2,6 +2,8 @@
 
 ## Poprawki na main po 0.0.1 (bez zmiany wersji)
 
+- Dodano ikonę licznika z akcentami magenta do dokumentacji i katalogu
+  `brand/` integracji (256 px oraz 512 px; przezroczyste tło).
 - Usunięto błędne odrzucanie profili dobowych z komunikatem
   `Response contains a different date`. Pomiary są przypisywane do dnia
   wskazanego w zapytaniu, zgodnie z zachowaniem Tauron AMIplus.

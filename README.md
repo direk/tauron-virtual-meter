@@ -1,5 +1,7 @@
 # Tauron Virtual Meter — wersja 0.0.1
 
+<img src="custom_components/tauron_virtual_meter/brand/icon@2x.png" alt="Ikona Tauron Virtual Meter — licznik energii z akcentami magenta" width="128" height="128">
+
 Niestandardowa integracja Home Assistant: wirtualny licznik energii pobranej
 i oddanej, w kWh, z historią godzinową przypisaną bezpośrednio do encji.
 Nie tworzy osobnego źródła `tauron_importer` i nie wymaga panelu Energia.
@@ -45,6 +47,14 @@ Minimalna obsługiwana wersja HA nie została jeszcze ustalona testem uruchomien
 Możesz też dodać `https://github.com/direk/tauron-virtual-meter` do HACS
 jako repozytorium niestandardowe typu **Integracja** i zainstalować stamtąd.
 Instalacja przez HACS nie była jeszcze sprawdzana w działającym HA.
+
+## Ikona integracji
+
+Ikona licznika jest dołączona do katalogu `brand/` integracji w rozmiarach
+256 × 256 i 512 × 512 px, z przezroczystym tłem. Home Assistant od wersji
+2026.3 obsługuje takie [lokalne ikony integracji](https://contributors.home-assistant.io/blog/2026/02/24/brands-proxy-api/).
+Po skopiowaniu aktualnego katalogu integracji uruchom ponownie Home Assistant
+i odśwież stronę w przeglądarce.
 
 ## Historia tej samej encji
 

@@ -82,10 +82,12 @@ Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
 - `history_scan_next_day` — dzień, od którego będzie kontynuowany import.
 - `history_days_remaining` — liczba dni pozostałych do sprawdzenia.
 - `downloaded_interval_count` — liczba poprawnie odczytanych godzin dla tej encji.
+- `empty_profile_day_count` — liczba pobranych pustych dób dla tej encji
+  (np. same wartości `null`); nie są one uznawane za zerowe zużycie.
 - `downloaded_energy_kwh` — suma dotychczas pobranych pomiarów; podczas importu
   może rosnąć wskutek dodawania starszych dni i nie oznacza bieżącego zużycia.
 - `recovered_profile_count` — liczba zapisanych profili poboru/oddania odzyskanych
-  po usunięciu błędnej kontroli pola daty (łącznie dla obu encji).
+  lub ponownie przetworzonych po poprawkach parsera (łącznie dla obu encji).
 - `last_history_attempt` — ostatnia próba pobrania archiwum.
 - `last_history_error` i `history_retry_after` — powód oraz czas ponowienia po błędzie.
 - `history_retry_kind` — `connection` oznacza chwilową awarię połączenia,
@@ -105,6 +107,14 @@ Jeśli `history_scan_next_day` się zmienia, import trwa. Jeśli nie zmienia si�
 sprawdź ostatni błąd i czas ponowienia. Jeśli `downloaded_interval_count` wynosi
 zero, a `profile_issue_count` rośnie, format odpowiedzi wymaga sprawdzenia;
 samo czekanie na zakończenie skanowania nie rozwiąże tego problemu.
+
+Tauron może zwrócić np. 23 wartości `null` i 24 etykiety godzin dla zwykłego dnia.
+Na gałęzi `main` po 0.0.3 taka odpowiedź jest rozpoznawana jako brak odczytów,
+bez ustalania rozdzielczości i bez wpisywania zer do statystyk. Zapisane wcześniej
+odpowiedzi odrzucone z powodu daty albo rozdzielczości są ponownie przetwarzane
+po restarcie. Rzeczywiście niejednoznaczne profile z niepustymi pomiarami nadal
+pozostają oznaczone jako problem. Czas ostatniej próby jest aktualizowany także
+na początku partii importu, a nie dopiero po jej zakończeniu.
 
 Komunikat `Tauron API did not confirm a successful response` oznacza odrzuconą
 odpowiedź API, a nie potwierdzony brak danych. Taka odpowiedź nie jest zamieniana

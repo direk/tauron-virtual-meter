@@ -1,5 +1,6 @@
 """Contract tests independent of Home Assistant and a real Tauron account."""
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 from datetime import date
@@ -15,6 +16,17 @@ def response(values):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_tauron_empty_day_with_23_nulls_and_24_labels_is_missing_not_zero(self):
+        raw = json.loads((Path(__file__).parent / "fixtures/empty_profile.json").read_text())
+        parsed = model.parse_day(date(2024, 9, 7), raw)
+        self.assertEqual(parsed, {})
+        self.assertEqual(model.cumulative_statistics({"2024-09-07": parsed}), [])
+
+    def test_23_values_with_a_real_reading_on_normal_day_still_need_resolution(self):
+        raw = response([None]*22 + ["0.1"])
+        with self.assertRaises(model.ProfileError):
+            model.parse_day(date(2024, 9, 7), raw)
+
     def test_daily_request_date_takes_precedence_over_tauron_row_date(self):
         day = date(2026, 11, 20)
         for source_date in ("20.11.2026", "2026-11-20 00:00:00", "1999-01-01", ""):

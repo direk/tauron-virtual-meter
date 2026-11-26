@@ -1,5 +1,15 @@
 # Historia zmian
 
+## Niewydane — main
+
+- Puste profile (np. 23 wartości `null` i 24 etykiety godzin) są rozpoznawane
+  jako brak pomiarów, bez błędu rozdzielczości i bez tworzenia zerowych odczytów.
+- Po restarcie zapisane profile odrzucone z powodu rozdzielczości są przeliczane
+  ponownie. Dodano atrybut `empty_profile_day_count`.
+- Usunięta stara przerwa po błędzie rejestru nie pozostawia już nieaktualnego
+  `last_history_error`. Początek próby importu jest od razu widoczny w atrybutach.
+- Weryfikacja: 59 testów lokalnych, w tym profil odtworzony ze zgłoszonej odpowiedzi.
+
 ## 0.0.3 — 2026-11-26
 
 - Odrzucenie dodatkowego odczytu rejestru nie blokuje już pobierania profili

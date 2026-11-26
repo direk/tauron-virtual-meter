@@ -65,6 +65,7 @@ class MeterCoordinator(DataUpdateCoordinator):
             self._retry_after = None
             self.archive["history_retry_after"] = None
             self.archive["history_retry_kind"] = None
+            self.archive["last_history_error"] = None
             await self.store.async_save(self.archive)
 
     def apply_profile(self, day, direction, response):
@@ -85,15 +86,16 @@ class MeterCoordinator(DataUpdateCoordinator):
             return False
 
     async def repair_cached_dates(self):
-        """Recover profiles rejected by the old Date check, without API calls.
+        """Reparse profiles affected by known parser fixes, without API calls.
 
         Raw files are keyed by the single day actually requested from Tauron.
-        Keep them untouched, reparse only the specific known defect, and leave
+        Keep them untouched, reparse only the known date/resolution errors, and leave
         unrelated parse errors visible for further diagnosis.
         """
         repaired = 0
         for key, reason in tuple(self.archive["issues"].items()):
-            if reason != "Response contains a different date":
+            if reason not in {"Response contains a different date",
+                              "Unknown profile resolution or ambiguous DST day"}:
                 continue
             try:
                 day_text, direction = key.rsplit(".", 1)
@@ -107,7 +109,7 @@ class MeterCoordinator(DataUpdateCoordinator):
                 repaired += 1
         if repaired:
             self.archive["recovered_profile_count"] = self.archive.get("recovered_profile_count", 0) + repaired
-            _LOGGER.info("Odzyskano %s zapisanych profili po poprawce dat", repaired)
+            _LOGGER.info("Ponownie przetworzono %s zapisanych profili po poprawce parsera", repaired)
         await self.store.async_save(self.archive)
 
     async def raw_save(self, key, response):
@@ -214,6 +216,7 @@ class MeterCoordinator(DataUpdateCoordinator):
             return
         async with self.lock:
             self.archive["last_history_attempt"] = datetime.now(timezone.utc).isoformat()
+            self.async_update_listeners()
             try:
                 await self.api.select(self.entry.data["meter_id"])
                 for _ in range(14):

@@ -54,6 +54,11 @@ def parse_day(day: date, response: dict):
             raise ProfileError("No recognized interval array")
         if not values:
             return {}
+        # Tauron can return 23 nulls beside 24 hour labels on an ordinary
+        # day without measurements. With no actual value there is no time
+        # interval to resolve; this is missing data, never zero consumption.
+        if all(value is None for value in values):
+            return {}
         if len(values) != len(hours):
             raise ProfileError("Unknown profile resolution or ambiguous DST day")
         return {

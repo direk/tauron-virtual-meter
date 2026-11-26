@@ -3,6 +3,7 @@ import asyncio
 from contextlib import ExitStack
 from datetime import date
 import importlib
+import json
 from pathlib import Path
 import sys
 import types
@@ -199,6 +200,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(meter._retry_after)
         self.assertIsNone(meter.archive["history_retry_after"])
         self.assertEqual(meter.archive["history_day_progress"]["completed"], ["profile.consum", "profile.oze"])
+        self.assertIsNone(meter.archive["last_history_error"])
 
     async def test_upgrade_does_not_release_rate_limit_with_completed_profiles(self):
         meter = self.coordinator
@@ -320,7 +322,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         meter.api.profile = AsyncMock()
         raw = {"data": {"allData": [{"Date": "1999-01-01", "Hour": "1", "EC": "0.45", "Status": "0"}]}}
         stored = types.SimpleNamespace(async_load=AsyncMock(return_value=raw))
-        with patch.object(self.module, "Store", return_value=stored):
+        unresolved = types.SimpleNamespace(async_load=AsyncMock(return_value={"data": {"values": [1]*96}}))
+        with patch.object(self.module, "Store", side_effect=lambda hass, version, key: unresolved if key.endswith("2026-11-19.oze") else stored):
             await meter.load()
             await meter.repair_cached_dates()
         meter.api.profile.assert_not_awaited()
@@ -331,6 +334,29 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(meter.archive["cursor"], "2026-11-20")
         self.assertEqual(list(meter.archive["issues"]), ["2026-11-19.oze"])
         self.assertEqual(raw["data"]["allData"][0]["Date"], "1999-01-01")
+
+    async def test_reparse_cached_empty_profiles_clears_errors_without_adding_energy(self):
+        meter = self.coordinator
+        meter.archive["issues"] = {f"2024-09-07.{direction}": "Unknown profile resolution or ambiguous DST day"
+                                    for direction in ("consum", "oze")}
+        raw = json.loads((Path(__file__).parent / "fixtures/empty_profile.json").read_text())
+        cached = types.SimpleNamespace(async_load=AsyncMock(return_value=raw))
+        meter.api.profile = AsyncMock()
+        with patch.object(self.module, "Store", return_value=cached):
+            await meter.repair_cached_dates()
+            await meter.repair_cached_dates()
+        self.assertEqual(meter.archive["issues"], {})
+        self.assertEqual(meter.archive["profiles"]["oze"]["2024-09-07"], {})
+        self.assertEqual(meter.archive["recovered_profile_count"], 2)
+        self.assertEqual(meter.archive["cursor"], "2026-11-20")
+        self.assertEqual(cached.async_load.await_count, 2)
+        meter.api.profile.assert_not_awaited()
+
+    async def test_empty_profile_count_is_separate_from_parsing_errors(self):
+        sensor, _ = self.make_sensor()
+        self.coordinator.archive["profiles"]["consum"] = {"2024-09-07": {}, "2024-09-06": {}}
+        self.assertEqual(sensor.extra_state_attributes["empty_profile_day_count"], 2)
+        self.assertEqual(sensor.extra_state_attributes["profile_issue_count"], 0)
 
     async def test_cached_date_repair_keeps_newly_detected_profile_errors(self):
         meter = self.coordinator

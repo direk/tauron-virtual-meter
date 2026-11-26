@@ -1,6 +1,6 @@
 # Historia zmian
 
-## Poprawki na main po 0.0.1 (bez zmiany wersji)
+## 0.0.2 — 2026-11-26
 
 - Pliki integracji są przechowywane w `/config/.storage/tauron_virtual_meter/`.
   Przy starcie dotychczasowe archiwum jest automatycznie przenoszone, z zachowaniem
@@ -27,6 +27,10 @@
 - Dane częściowe nie trafiają do końcowej historii statystyk, dopóki nie zostanie
   ustalony początek licznika po zakończeniu skanowania.
 - Dodano testy publikowania częściowych danych i diagnostyki błędów.
+
+Weryfikacja: 47 testów lokalnych, w tym testy migracji na rzeczywistych plikach
+w katalogach tymczasowych i testy ponawiania z atrapami Home Assistant/aiohttp.
+Brak automatycznego testu uruchomieniowego w działającym Home Assistant.
 
 ## 0.0.1 — 2026-11-26
 

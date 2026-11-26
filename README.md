@@ -1,4 +1,4 @@
-# Tauron Virtual Meter — wersja 0.0.1
+# Tauron Virtual Meter — wersja 0.0.2
 
 <img src="custom_components/tauron_virtual_meter/brand/icon@2x.png" alt="Ikona Tauron Virtual Meter — licznik energii z akcentami magenta" width="128" height="128">
 
@@ -14,16 +14,12 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
-**Poprawka po pierwszym wydaniu 0.0.1:** kod na gałęzi `main` pokazuje postęp
-importu i częściową sumę w atrybutach, bez zwiększania głównego stanu licznika
-przy dopisywaniu kolejnych miesięcy historii.
-Usuwa też błędne odrzucanie profili z komunikatem
-`Response contains a different date`. Po restarcie automatycznie przelicza
-oryginalne zapisane odpowiedzi odrzucone z tego powodu, bez ponownego pobierania.
-Wersja pozostaje 0.0.1. Aby otrzymać tę poprawkę bez nowego wydania, pobierz
-[aktualny kod](https://github.com/direk/tauron-virtual-meter/archive/refs/heads/main.zip),
-podmień katalog `/config/custom_components/tauron_virtual_meter` i uruchom
-ponownie Home Assistant. Nie usuwaj wpisu integracji ani plików `.storage`.
+**Aktualizacja do 0.0.2:** zainstaluj nowe wydanie i uruchom ponownie Home Assistant.
+Archiwum zostanie automatycznie przeniesione do `/config/.storage/tauron_virtual_meter/`,
+z zachowaniem pomiarów oraz postępu importu. Zapisane profile odrzucone przez
+wcześniejszą kontrolę daty zostaną ponownie przeliczone. Nie usuwaj wpisu integracji,
+nie przenoś plików ręcznie i nie uruchamiaj skanowania od początku.
+Szczegóły zmian znajdują się w [historii zmian](CHANGELOG.md).
 
 [![Dodaj repozytorium do Home Assistant przez HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=direk&repository=tauron-virtual-meter&category=integration)
 
@@ -31,8 +27,8 @@ Kliknij przycisk, wybierz swój Home Assistant i potwierdź dodanie repozytorium
 w HACS. Następnie zainstaluj integrację i uruchom ponownie Home Assistant.
 Przycisk wymaga skonfigurowanego HACS.
 
-Paczka instalacyjna: [wydanie 0.0.1](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.1).
-Rozpakuj plik `tauron_virtual_meter-0.0.1.zip`, a następnie:
+Paczka instalacyjna: [wydanie 0.0.2](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.2).
+Rozpakuj plik `tauron_virtual_meter-0.0.2.zip`, a następnie:
 
 1. Skopiuj katalog `custom_components/tauron_virtual_meter` do
    `/config/custom_components/tauron_virtual_meter` na urządzeniu z Home Assistant.
@@ -204,7 +200,7 @@ licznika. Nie obejmuje faktur, umów, płatności ani nieodkrytych endpointów M
 Nie pobiera historycznych zestawień miesiąc/rok: zachowuje ich dokładniejsze
 profile dobowe i ostatnie zestawienia kontrolne.
 
-Wersja 0.0.1 importuje **profile godzinowe** zgodnie z numeracją `Hour` od 1
+Wersja 0.0.2 importuje **profile godzinowe** zgodnie z numeracją `Hour` od 1
 znaną z integracji źródłowej. Godziny przeliczane są z Europe/Warsaw na UTC.
 Każde zapytanie o profil dotyczy jednego dnia (`from == to`); używana jest data
 tego zapytania, tak jak w Tauron AMIplus. Pole `Date` poszczególnych wierszy

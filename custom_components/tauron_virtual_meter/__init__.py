@@ -44,6 +44,10 @@ async def async_setup_entry(hass, entry):
                     meter.archive["cursor"] = (datetime.now(WARSAW).date() - timedelta(days=1)).isoformat()
                     meter.archive["complete"] = False
                     meter._retry_after = None
+                    meter.archive.pop("history_day_progress", None)
+                    meter.archive["history_connection_failures"] = 0
+                    meter.archive["history_retry_after"] = None
+                    meter.archive["history_retry_kind"] = None
                     await meter.store.async_save(meter.archive)
                     meter.async_set_updated_data(meter.archive)
 

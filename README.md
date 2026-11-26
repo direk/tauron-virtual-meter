@@ -90,6 +90,9 @@ Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
   po usunięciu błędnej kontroli pola daty (łącznie dla obu encji).
 - `last_history_attempt` — ostatnia próba pobrania archiwum.
 - `last_history_error` i `history_retry_after` — powód oraz czas ponowienia po błędzie.
+- `history_retry_kind` — `connection` oznacza chwilową awarię połączenia,
+  `rate_limit` ograniczenie Taurona, `api_error` inny błąd API,
+  a `authentication` konieczność ponownego logowania.
 - `profile_issue_count` i `last_profile_issue` — problemy z interpretacją profili.
 - `last_successful_sync` — czas ostatniej udanej synchronizacji bieżących danych.
 
@@ -159,8 +162,23 @@ mode: single
 ```
 
 Akcję można też wywołać w Narzędziach deweloperskich, wybierając wpis integracji.
-Brak połączenia nie zeruje danych. Błąd logowania uruchamia ponowną autoryzację;
-błąd importu historycznego wstrzymuje kolejne próby na godzinę.
+Brak połączenia nie zeruje danych. Błąd logowania uruchamia ponowną autoryzację.
+Po chwilowym zerwaniu połączenia, przekroczeniu czasu odpowiedzi albo błędzie
+serwera HTTP 5xx import czeka kolejno 1, 2, 4, 8 i maksymalnie 15 minut.
+Po pomyślnym przetworzeniu całego dnia licznik takich awarii jest zerowany.
+Próba następuje na najbliższym wolnym wywołaniu minutowego harmonogramu po
+`history_retry_after`; trwająca synchronizacja bieżąca może ją opóźnić.
+
+HTTP 429 lub komunikat Taurona o zbyt wielu logowaniach nadal oznacza co najmniej
+godzinę przerwy; dłuższe `Retry-After` zwrócone przez serwer jest respektowane.
+Pozostałe błędy API również zachowują godzinną przerwę. Ustalony czas ponowienia
+jest przywracany po restarcie. Starsza godzinna przerwa bez zapisanego typu błędu
+nie jest przenoszona przy pierwszej aktualizacji do tej poprawki.
+
+Udane zapytania z aktualnie przetwarzanego dnia są zapamiętywane. Po błędzie
+ponawiane są brakujące zapytania, z wykorzystaniem zapisanych już odpowiedzi.
+Zwykła synchronizacja ostatniego tygodnia i celowe ponowne skanowanie zakończonych
+dni nadal pobierają świeże dane, aby wykrywać korekty.
 
 ## Zachowane dane i dokładność
 

@@ -45,6 +45,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         modules["aiohttp"].ClientSession = object
         modules["aiohttp"].ClientTimeout = lambda **kwargs: kwargs
         modules["aiohttp"].ClientError = type("ClientError", (Exception,), {})
+        modules["aiohttp"].ClientConnectionError = type("ClientConnectionError", (modules["aiohttp"].ClientError,), {})
         modules["homeassistant.exceptions"].ConfigEntryAuthFailed = type("ConfigEntryAuthFailed", (Exception,), {})
         modules["homeassistant.helpers.storage"].Store = FakeStore
         modules["homeassistant.helpers.update_coordinator"].DataUpdateCoordinator = FakeCoordinator
@@ -69,7 +70,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         meter.export = AsyncMock()
         with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
             await meter.history_tick()
-        meter.download_day.assert_awaited_once_with(date(2026, 11, 20))
+        meter.download_day.assert_awaited_once_with(date(2026, 11, 20), resume=True)
         self.assertEqual(meter.archive["cursor"], "2026-11-19")
         self.assertTrue(meter.archive["complete"])
         meter.export.assert_awaited_once()
@@ -250,6 +251,105 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             await meter.repair_cached_dates()
         self.assertEqual(meter.archive["issues"]["2026-11-20.consum"], "Response contains a different date")
         self.assertEqual(meter.archive["cursor"], "2026-11-20")
+
+    async def test_transient_failures_back_off_in_minutes_not_hours(self):
+        meter = self.coordinator
+        meter.api = types.SimpleNamespace(select=AsyncMock(side_effect=self.api_module.TransientApiError("Tauron connection failed")))
+        for expected in (60, 120, 240, 480, 900, 900):
+            meter._retry_after = None
+            before = self.module.datetime.now(self.module.timezone.utc)
+            await meter.history_tick()
+            delay = (meter._retry_after - before).total_seconds()
+            self.assertAlmostEqual(delay, expected, delta=1)
+            self.assertEqual(meter.archive["history_retry_kind"], "connection")
+
+    async def test_rate_limit_keeps_long_server_requested_cooldown(self):
+        meter = self.coordinator
+        meter.api = types.SimpleNamespace(select=AsyncMock(side_effect=self.api_module.RateLimitError("limit", 7200)))
+        before = self.module.datetime.now(self.module.timezone.utc)
+        await meter.history_tick()
+        self.assertAlmostEqual((meter._retry_after - before).total_seconds(), 7200, delta=1)
+        self.assertEqual(meter.archive["history_retry_kind"], "rate_limit")
+
+    async def test_history_waits_until_retry_deadline(self):
+        meter = self.coordinator
+        meter._retry_after = self.module.datetime.now(self.module.timezone.utc) + self.module.timedelta(minutes=5)
+        meter.api = types.SimpleNamespace(select=AsyncMock())
+        await meter.history_tick()
+        meter.api.select.assert_not_awaited()
+
+    async def test_resume_does_not_redownload_successful_requests_from_failed_day(self):
+        meter = self.coordinator
+        raw = {"data": {"values": ["0.1"] * 24}}
+        meter.api = types.SimpleNamespace(
+            select=AsyncMock(), profile=AsyncMock(return_value=raw),
+            readings=AsyncMock(side_effect=[{"data": []}, self.api_module.TransientApiError("offline"), {"data": []}]),
+        )
+        meter.export = AsyncMock()
+        files = {}
+
+        async def raw_save(key, value):
+            files[f"{self.module.DOMAIN}.test.{key}"] = value
+
+        def cached_store(hass, version, key):
+            return types.SimpleNamespace(async_load=AsyncMock(return_value=files.get(key)))
+
+        meter.raw_save = raw_save
+        with patch.object(self.module, "Store", side_effect=cached_store), patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter.history_tick()
+            self.assertEqual(meter.archive["cursor"], "2026-11-20")
+            self.assertEqual(len(meter.archive["history_day_progress"]["completed"]), 3)
+            meter._retry_after = None
+            await meter.history_tick()
+        self.assertEqual(meter.api.profile.await_count, 2)
+        self.assertEqual(meter.api.readings.await_count, 3)
+        self.assertTrue(meter.archive["complete"])
+        self.assertNotIn("history_day_progress", meter.archive)
+        self.assertEqual(meter.archive["history_connection_failures"], 0)
+        self.assertIsNone(meter.archive["history_retry_after"])
+        self.assertIsNone(meter.archive["last_history_error"])
+
+    async def test_finished_days_cache_is_not_reused_during_fresh_scan(self):
+        meter = self.coordinator
+        fetch = AsyncMock(return_value={"data": []})
+        meter.raw_save = AsyncMock()
+        day = date(2026, 11, 20)
+        await meter.history_response(day, "readings", "consum", fetch)
+        meter.archive.pop("history_day_progress")
+        await meter.history_response(day, "readings", "consum", fetch)
+        self.assertEqual(fetch.await_count, 2)
+
+    async def test_retry_deadline_survives_reload(self):
+        meter = self.coordinator
+        deadline = self.module.datetime.now(self.module.timezone.utc) + self.module.timedelta(minutes=5)
+        meter.archive["history_retry_kind"] = "rate_limit"
+        meter.archive["history_retry_after"] = deadline.isoformat()
+        meter.store.async_load = AsyncMock(return_value=meter.archive)
+        await meter.load()
+        self.assertEqual(meter._retry_after, deadline)
+
+    async def test_text_transport_marks_timeout_as_transient(self):
+        def request(*args, **kwargs):
+            raise TimeoutError()
+        api = self.api_module.TauronAPI(types.SimpleNamespace(request=request), "user", "secret")
+        with self.assertRaises(self.api_module.TransientApiError):
+            await api._text("GET", "https://elicznik.tauron-dystrybucja.pl")
+
+    async def test_http_429_preserves_retry_after(self):
+        class Response:
+            status = 429
+            headers = {"Retry-After": "7200"}
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        api = self.api_module.TauronAPI(types.SimpleNamespace(request=lambda *args, **kwargs: Response()), "user", "secret")
+        with self.assertRaises(self.api_module.RateLimitError) as caught:
+            await api._text("GET", "https://elicznik.tauron-dystrybucja.pl")
+        self.assertEqual(caught.exception.retry_after_seconds, 7200)
 
 
 if __name__ == "__main__":

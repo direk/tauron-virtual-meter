@@ -11,7 +11,7 @@ from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
-from aiohttp import ClientSession, ClientTimeout
+from aiohttp import ClientConnectionError, ClientSession, ClientTimeout
 
 from .const import BASE_URL, LOGIN_URL
 
@@ -22,6 +22,18 @@ class ApiError(Exception):
 
 class AuthenticationError(ApiError):
     """Credentials need updating."""
+
+
+class TransientApiError(ApiError):
+    """A connection failure or temporary server error; retry with backoff."""
+
+
+class RateLimitError(ApiError):
+    """Tauron explicitly requested a longer pause."""
+
+    def __init__(self, message, retry_after_seconds=3600):
+        super().__init__(message)
+        self.retry_after_seconds = max(3600, retry_after_seconds)
 
 
 class LoginPage(HTMLParser):
@@ -68,14 +80,27 @@ class TauronAPI:
                 method, url, timeout=ClientTimeout(total=45), **kwargs
             ) as response:
                 if response.status == 429:
-                    raise ApiError("Tauron rate limit: retry on next scheduled sync")
+                    from datetime import datetime, timezone
+                    from email.utils import parsedate_to_datetime
+                    delay = 3600
+                    header = response.headers.get("Retry-After", "")
+                    try:
+                        delay = int(header)
+                    except ValueError:
+                        try:
+                            delay = (parsedate_to_datetime(header) - datetime.now(timezone.utc)).total_seconds()
+                        except (ValueError, TypeError, OverflowError):
+                            pass
+                    raise RateLimitError("Tauron rate limit: retry later", delay)
+                if response.status >= 500:
+                    raise TransientApiError("Tauron server temporarily unavailable")
                 response.raise_for_status()
                 text = await response.text()
                 if "Przekroczono maksymalną liczbę logowań" in text:
-                    raise ApiError("Tauron login limit: retry later")
+                    raise RateLimitError("Tauron login limit: retry later")
                 return text, str(response.url)
-        except (asyncio.TimeoutError, OSError) as err:
-            raise ApiError("Tauron connection failed") from err
+        except (ClientConnectionError, asyncio.TimeoutError, OSError) as err:
+            raise TransientApiError("Tauron connection failed") from err
 
     async def login(self):
         text, _ = await self._text("GET", BASE_URL)

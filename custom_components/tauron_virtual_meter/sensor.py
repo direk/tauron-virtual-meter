@@ -91,6 +91,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "last_history_attempt": archive.get("last_history_attempt"),
             "last_history_error": archive.get("last_history_error"),
             "history_retry_after": archive.get("history_retry_after"),
+            "history_retry_kind": archive.get("history_retry_kind"),
             "last_profile_issue": next(reversed(issues.values()), None),
             "counter_origin": "zero_before_first_available_interval",
         }

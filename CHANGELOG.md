@@ -2,6 +2,11 @@
 
 ## Poprawki na main po 0.0.1 (bez zmiany wersji)
 
+- Chwilowe błędy połączenia i HTTP 5xx mają ponowienia po 1, 2, 4, 8 i maksymalnie
+  15 minutach zamiast stałej godziny. Wyraźne limity Taurona nadal wymagają
+  dłuższej przerwy; HTTP `Retry-After` jest respektowane.
+- Import wznawia przerwany dzień od brakujących zapytań, wykorzystując zapisane
+  już odpowiedzi. Dodano atrybut `history_retry_kind` i zachowanie przerwy po restarcie.
 - Częściowa suma podczas importu jest teraz atrybutem `downloaded_energy_kwh`.
   Główny licznik nie rośnie już wskutek dopisywania kolejnych miesięcy archiwum,
   co wcześniej tworzyło mylące schodki w zwykłej Historii.

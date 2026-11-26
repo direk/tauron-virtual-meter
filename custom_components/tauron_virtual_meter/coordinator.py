@@ -5,12 +5,12 @@ import asyncio
 from datetime import date, datetime, timedelta, timezone
 import logging
 
-from aiohttp import ClientError
+from aiohttp import ClientConnectionError, ClientError
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import ApiError, AuthenticationError, TauronAPI
+from .api import ApiError, AuthenticationError, RateLimitError, TauronAPI, TransientApiError
 from .const import DEFAULT_HISTORY_START, DEFAULT_INTERVAL, DOMAIN
 from .profile import ProfileError, WARSAW, cumulative_statistics, parse_day
 
@@ -50,6 +50,10 @@ class MeterCoordinator(DataUpdateCoordinator):
         if date.fromisoformat(self.archive["cursor"]) >= self.history_start:
             self.archive["complete"] = False
         await self.repair_cached_dates()
+        # Preserve an explicit cooldown across restarts. Older versions had
+        # no retry category and imposed an hour on every transient disconnect.
+        if self.archive.get("history_retry_kind") and self.archive.get("history_retry_after"):
+            self._retry_after = datetime.fromisoformat(self.archive["history_retry_after"])
 
     def apply_profile(self, day, direction, response):
         """Apply a downloaded or stored daily response with the same rules."""
@@ -97,11 +101,32 @@ class MeterCoordinator(DataUpdateCoordinator):
     async def raw_save(self, key, response):
         await Store(self.hass, 1, f"{DOMAIN}.{self.entry.entry_id}.{key}").async_save(response)
 
-    async def download_day(self, day):
+    async def history_response(self, day, kind, direction, fetch):
+        """Resume the failed day's requests without reusing old data on a rescan."""
+        progress = self.archive.get("history_day_progress", {})
+        if progress.get("day") != day.isoformat():
+            progress = {"day": day.isoformat(), "completed": []}
+            self.archive["history_day_progress"] = progress
+        stage = f"{kind}.{direction}"
+        key = f"{day.isoformat()}.{'readings.' if kind == 'readings' else ''}{direction}"
+        if stage in progress["completed"]:
+            cached = await Store(self.hass, 1, f"{DOMAIN}.{self.entry.entry_id}.{key}").async_load()
+            if cached is not None:
+                return cached
+        response = await fetch(day, day, direction)
+        await self.raw_save(key, response)
+        if stage not in progress["completed"]:
+            progress["completed"].append(stage)
+        return response
+
+    async def download_day(self, day, *, resume=False):
         for direction in ("consum", "oze"):
-            response = await self.api.profile(day, day, direction)
-            # Keep the finest response, zones, status flags and unrecognized fields.
-            await self.raw_save(f"{day.isoformat()}.{direction}", response)
+            if resume:
+                response = await self.history_response(day, "profile", direction, self.api.profile)
+            else:
+                response = await self.api.profile(day, day, direction)
+                # Periodic refresh always fetches new data, regardless of cache.
+                await self.raw_save(f"{day.isoformat()}.{direction}", response)
             self.apply_profile(day, direction, response)
             await asyncio.sleep(0.5)
 
@@ -169,17 +194,19 @@ class MeterCoordinator(DataUpdateCoordinator):
                     if day < self.history_start:
                         self.archive["complete"] = True
                         break
-                    await self.download_day(day)
+                    await self.download_day(day, resume=True)
                     # Daily register responses are archived too; no unproven
                     # assumptions about the register timestamp are used in sums.
                     for direction in ("consum", "oze"):
-                        await self.raw_save(f"{day.isoformat()}.readings.{direction}",
-                                            await self.api.readings(day, day, direction))
+                        await self.history_response(day, "readings", direction, self.api.readings)
                         await asyncio.sleep(0.5)
                     self.archive["cursor"] = (day - timedelta(days=1)).isoformat()
+                    self.archive.pop("history_day_progress", None)
+                    self.archive["history_connection_failures"] = 0
                     await self.store.async_save(self.archive)
                 self.archive["last_history_error"] = None
                 self.archive["history_retry_after"] = None
+                self.archive["history_retry_kind"] = None
                 self._retry_after = None
                 await self.store.async_save(self.archive)
                 await self.export()
@@ -188,20 +215,33 @@ class MeterCoordinator(DataUpdateCoordinator):
                 self._retry_after = datetime.now(timezone.utc) + timedelta(hours=1)
                 self.archive["last_history_error"] = "AuthenticationError: credentials rejected"
                 self.archive["history_retry_after"] = self._retry_after.isoformat()
+                self.archive["history_retry_kind"] = "authentication"
                 await self.store.async_save(self.archive)
                 self.async_update_listeners()
                 self.entry.async_start_reauth(self.hass)
             except (ApiError, ClientError, OSError, ValueError) as err:
-                self._retry_after = datetime.now(timezone.utc) + timedelta(hours=1)
+                if isinstance(err, RateLimitError):
+                    delay = err.retry_after_seconds
+                    kind = "rate_limit"
+                elif isinstance(err, (TransientApiError, ClientConnectionError, OSError)):
+                    failures = min(self.archive.get("history_connection_failures", 0) + 1, 5)
+                    self.archive["history_connection_failures"] = failures
+                    delay = min(60 * 2 ** (failures - 1), 900)
+                    kind = "connection"
+                else:
+                    delay = 3600
+                    kind = "api_error"
+                self._retry_after = datetime.now(timezone.utc) + timedelta(seconds=delay)
                 # Only our fixed-message API errors are exposed; third-party
                 # exception text can contain request details.
                 reason = str(err) if isinstance(err, ApiError) else type(err).__name__
                 self.archive["last_history_error"] = reason
                 self.archive["history_retry_after"] = self._retry_after.isoformat()
+                self.archive["history_retry_kind"] = kind
                 await self.store.async_save(self.archive)
                 await self.export()
                 self.async_update_listeners()
-                _LOGGER.warning("Import historii wstrzymany na godzinę (%s); postęp zachowano", reason)
+                _LOGGER.warning("Import historii wstrzymany na %s s (%s); postęp zachowano", delay, reason)
 
     async def export(self):
         # Sensors expose partial totals as progress attributes, then publish

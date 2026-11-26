@@ -137,13 +137,79 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         meter.raw_save = AsyncMock()
         with self.assertRaises(self.api_module.ApiResponseError):
             await meter.history_response(date(2024, 9, 7), "readings", "oze", fetch)
-        key, payload = meter.raw_save.await_args.args
+        key, payload = meter.raw_save.await_args_list[0].args
         self.assertEqual(key, "last_api_error")
         self.assertEqual(payload["response"], response)
         self.assertEqual(payload["request"], {"day": "2024-09-07", "kind": "readings", "direction": "oze"})
         self.assertEqual(meter.archive["history_day_progress"]["completed"], [])
         self.assertEqual(meter.archive["cursor"], "2026-11-20")
         self.assertEqual(meter.archive["last_api_response_summary"]["fields"], ["success", "message", "data"])
+        self.assertEqual(meter.raw_save.await_args_list[1].args[0], "2024-09-07.readings.oze.error")
+
+    async def test_rejected_auxiliary_register_does_not_block_successful_profiles(self):
+        meter = self.coordinator
+        meter.api = types.SimpleNamespace(
+            select=AsyncMock(), profile=AsyncMock(return_value={"data": {"values": ["0.1"] * 24}}),
+            readings=AsyncMock(side_effect=self.api_module.ApiResponseError("/odczyty/api", {"success": False})),
+        )
+        meter.raw_save = AsyncMock()
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter.history_tick()
+        self.assertTrue(meter.archive["complete"])
+        self.assertEqual(meter.archive["cursor"], "2026-11-19")
+        self.assertIsNone(meter.archive["last_history_error"])
+        self.assertIsNone(meter.archive["history_retry_after"])
+        self.assertEqual(len(meter.archive["reading_issues"]), 2)
+        profile = importlib.import_module("test_tauron_adapter.profile")
+        self.assertEqual(profile.cumulative_statistics(meter.archive["profiles"]["consum"])[-1]["sum"], 2.4)
+        self.assertEqual(profile.cumulative_statistics(meter.archive["profiles"]["oze"])[-1]["sum"], 2.4)
+
+    async def test_rejected_hourly_profile_still_blocks_day_without_inventing_data(self):
+        meter = self.coordinator
+        meter.api = types.SimpleNamespace(
+            select=AsyncMock(), profile=AsyncMock(side_effect=self.api_module.ApiResponseError("/energia/api", {"success": False})),
+            readings=AsyncMock(),
+        )
+        meter.raw_save = AsyncMock()
+        await meter.history_tick()
+        self.assertFalse(meter.archive["complete"])
+        self.assertEqual(meter.archive["cursor"], "2026-11-20")
+        self.assertEqual(meter.archive["history_retry_kind"], "api_error")
+        self.assertEqual(meter.archive["profiles"]["consum"], {})
+        meter.api.readings.assert_not_awaited()
+
+    async def test_later_successful_register_fetch_clears_its_warning(self):
+        meter = self.coordinator
+        meter.archive["reading_issues"] = {"2026-11-20.oze": "previous failure"}
+        meter.raw_save = AsyncMock()
+        fetch = AsyncMock(return_value={"data": []})
+        await meter.history_response(date(2026, 11, 20), "readings", "oze", fetch)
+        self.assertEqual(meter.archive["reading_issues"], {})
+
+    async def test_upgrade_releases_legacy_register_rejection_cooldown(self):
+        meter = self.coordinator
+        meter.archive.update({
+            "history_retry_kind": "api_error",
+            "last_history_error": "Tauron API did not confirm a successful response",
+            "history_retry_after": (self.module.datetime.now(self.module.timezone.utc) + self.module.timedelta(hours=1)).isoformat(),
+            "history_day_progress": {"day": "2026-11-20", "completed": ["profile.consum", "profile.oze"]},
+        })
+        meter.store.async_load = AsyncMock(return_value=meter.archive)
+        await meter.load()
+        self.assertIsNone(meter._retry_after)
+        self.assertIsNone(meter.archive["history_retry_after"])
+        self.assertEqual(meter.archive["history_day_progress"]["completed"], ["profile.consum", "profile.oze"])
+
+    async def test_upgrade_does_not_release_rate_limit_with_completed_profiles(self):
+        meter = self.coordinator
+        deadline = self.module.datetime.now(self.module.timezone.utc) + self.module.timedelta(hours=1)
+        meter.archive.update({
+            "history_retry_kind": "rate_limit", "history_retry_after": deadline.isoformat(),
+            "history_day_progress": {"day": "2026-11-20", "completed": ["profile.consum", "profile.oze"]},
+        })
+        meter.store.async_load = AsyncMock(return_value=meter.archive)
+        await meter.load()
+        self.assertEqual(meter._retry_after, deadline)
 
     async def test_profile_issue_attributes_include_exact_day_and_direction(self):
         sensor, _ = self.make_sensor()

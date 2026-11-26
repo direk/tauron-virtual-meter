@@ -56,6 +56,16 @@ class MeterCoordinator(DataUpdateCoordinator):
         # no retry category and imposed an hour on every transient disconnect.
         if self.archive.get("history_retry_kind") and self.archive.get("history_retry_after"):
             self._retry_after = datetime.fromisoformat(self.archive["history_retry_after"])
+        progress = self.archive.get("history_day_progress", {})
+        if (self.archive.get("history_retry_kind") == "api_error"
+                and self.archive.get("last_history_error") == "Tauron API did not confirm a successful response"
+                and {"profile.consum", "profile.oze"}.issubset(progress.get("completed", []))):
+            # Previous releases paused the entire scan after an auxiliary
+            # register rejection. Resume that exact pending day on next tick.
+            self._retry_after = None
+            self.archive["history_retry_after"] = None
+            self.archive["history_retry_kind"] = None
+            await self.store.async_save(self.archive)
 
     def apply_profile(self, day, direction, response):
         """Apply a downloaded or stored daily response with the same rules."""
@@ -122,12 +132,16 @@ class MeterCoordinator(DataUpdateCoordinator):
         except ApiResponseError as err:
             self.archive["last_api_error_request"] = request
             self.archive["last_api_response_summary"] = err.summary
-            await self.raw_save("last_api_error", {
+            rejected = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "request": request, "endpoint": err.endpoint, "response": err.response,
-            })
+            }
+            await self.raw_save("last_api_error", rejected)
+            await self.raw_save(f"{key}.error", rejected)
             raise
         await self.raw_save(key, response)
+        if kind == "readings":
+            self.archive.setdefault("reading_issues", {}).pop(f"{day.isoformat()}.{direction}", None)
         if stage not in progress["completed"]:
             progress["completed"].append(stage)
         return response
@@ -211,7 +225,14 @@ class MeterCoordinator(DataUpdateCoordinator):
                     # Daily register responses are archived too; no unproven
                     # assumptions about the register timestamp are used in sums.
                     for direction in ("consum", "oze"):
-                        await self.history_response(day, "readings", direction, self.api.readings)
+                        try:
+                            await self.history_response(day, "readings", direction, self.api.readings)
+                        except ApiResponseError as err:
+                            # Hourly profiles above already succeeded. The
+                            # register is auxiliary and never used in the counter.
+                            # Preserve the rejection, not a zero/empty reading,
+                            # without blocking all subsequent historical days.
+                            self.archive.setdefault("reading_issues", {})[f"{day.isoformat()}.{direction}"] = str(err)
                         await asyncio.sleep(0.5)
                     self.archive["cursor"] = (day - timedelta(days=1)).isoformat()
                     self.archive.pop("history_day_progress", None)

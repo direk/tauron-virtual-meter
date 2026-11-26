@@ -75,6 +75,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         archive = self.coordinator.archive
         profiles = archive["profiles"][self.direction]
         issues = archive["issues"]
+        reading_issues = archive.get("reading_issues", {})
         remaining = max(0, (self.coordinator.history_cursor - self.coordinator.history_start).days + 1)
         return {
             "history_scan_complete": archive.get("complete", False),
@@ -97,5 +98,8 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "last_history_request": archive.get("last_history_request"),
             "last_api_error_request": archive.get("last_api_error_request"),
             "last_api_response_summary": archive.get("last_api_response_summary"),
+            "reading_issue_count": len(reading_issues),
+            "last_reading_issue_key": next(reversed(reading_issues), None),
+            "last_reading_issue": next(reversed(reading_issues.values()), None),
             "counter_origin": "zero_before_first_available_interval",
         }

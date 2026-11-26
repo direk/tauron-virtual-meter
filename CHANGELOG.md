@@ -2,6 +2,11 @@
 
 ## Niewydane — main
 
+- Odrzucenie dodatkowego odczytu rejestru nie blokuje już pobierania profili
+  kolejnych dni. Odpowiedź jest archiwizowana, a brak rejestru sygnalizują
+  atrybuty `reading_issue_count` i `last_reading_issue_key`.
+- Aktualizacja wznawia import przerwany w 0.0.2 po odrzuceniu rejestru, bez
+  utraty pobranych profili. Odrzucenia samych profili i limity nadal blokują import.
 - Odrzucone odpowiedzi API są zachowywane lokalnie w pliku `last_api_error`,
   z informacją o dniu, kierunku i rodzaju zapytania. Nie są uznawane za brak danych.
 - Dodano atrybuty `last_history_request`, `last_api_error_request`,

@@ -95,6 +95,8 @@ Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
   (`profile`/`readings`) oraz pobór/oddanie (`consum`/`oze`).
 - `last_api_error_request` i `last_api_response_summary` — kontekst ostatniej
   odrzuconej odpowiedzi JSON oraz jej struktura, bez treści pomiarów i komunikatów.
+- `reading_issue_count`, `last_reading_issue_key`, `last_reading_issue` — problemy
+  z dodatkowymi odczytami rejestrów; nie są one źródłem sum wirtualnego licznika.
 - `last_successful_sync` — czas ostatniej udanej synchronizacji bieżących danych.
 
 Jeśli `history_scan_next_day` się zmienia, import trwa. Jeśli nie zmienia się,
@@ -104,12 +106,21 @@ samo czekanie na zakończenie skanowania nie rozwiąże tego problemu.
 
 Komunikat `Tauron API did not confirm a successful response` oznacza odrzuconą
 odpowiedź API, a nie potwierdzony brak danych. Taka odpowiedź nie jest zamieniana
-na zerowe zużycie ani uznawana za poprawnie pobrany dzień. Na gałęzi `main` po
+na zerowe zużycie. Odrzucony profil godzinowy zatrzymuje import na danym dniu.
+Odrzucony dodatkowy rejestr (`readings`) jest zachowywany jako ostrzeżenie i nie
+blokuje kolejnych dni, jeśli zapytania o profile doby już się powiodły.
+Po aktualizacji usuwana jest stara przerwa po takim błędzie rejestru; postęp
+i pobrane odpowiedzi pozostają zachowane. Limity Taurona i błędy połączenia
+nadal mają swoje przerwy. Na gałęzi `main` po
 0.0.2 jest dodatkowo zachowywana w pliku
 `/config/.storage/tauron_virtual_meter/tauron_virtual_meter.<entry_id>.last_api_error`.
 Pole `data.response` w tym pliku pozwala ustalić przyczynę; nie przesyłaj całego
 archiwum ani danych logowania. Dodatkowe zapytania o rejestry i same profile
 godzinowe są rozróżniane w `last_api_error_request`.
+Każda odrzucona odpowiedź jest też zachowywana pod kluczem danego zapytania
+z końcówką `.error`, np. `tauron_virtual_meter.<entry_id>.2024-09-07.readings.oze.error`.
+Nieudane historyczne odczyty rejestrów można ponowić akcją pełnego skanowania;
+zwykłe odświeżanie sprawdza tylko ostatni tydzień.
 
 Przykładowa karta Lovelace — zastąp identyfikator encji swoim:
 

@@ -124,8 +124,37 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_success_false_is_not_an_empty_day(self):
         api = self.api_module.TauronAPI(object(), "user", "secret")
         api._text = AsyncMock(return_value=('{"success":false}', "https://elicznik.tauron-dystrybucja.pl/energia/api"))
-        with self.assertRaises(self.api_module.ApiError):
+        with self.assertRaises(self.api_module.ApiResponseError) as caught:
             await api.profile(date(2026, 11, 20), date(2026, 11, 20))
+        self.assertEqual(caught.exception.response, {"success": False})
+        self.assertEqual(caught.exception.endpoint, "/energia/api")
+        self.assertFalse(caught.exception.summary["success"])
+
+    async def test_rejected_response_is_archived_without_completing_request(self):
+        meter = self.coordinator
+        response = {"success": False, "message": "test error", "data": None}
+        fetch = AsyncMock(side_effect=self.api_module.ApiResponseError("/odczyty/api", response))
+        meter.raw_save = AsyncMock()
+        with self.assertRaises(self.api_module.ApiResponseError):
+            await meter.history_response(date(2024, 9, 7), "readings", "oze", fetch)
+        key, payload = meter.raw_save.await_args.args
+        self.assertEqual(key, "last_api_error")
+        self.assertEqual(payload["response"], response)
+        self.assertEqual(payload["request"], {"day": "2024-09-07", "kind": "readings", "direction": "oze"})
+        self.assertEqual(meter.archive["history_day_progress"]["completed"], [])
+        self.assertEqual(meter.archive["cursor"], "2026-11-20")
+        self.assertEqual(meter.archive["last_api_response_summary"]["fields"], ["success", "message", "data"])
+
+    async def test_profile_issue_attributes_include_exact_day_and_direction(self):
+        sensor, _ = self.make_sensor()
+        self.coordinator.archive["issues"]["2025-10-26.oze"] = "Unknown profile resolution or ambiguous DST day"
+        self.assertEqual(sensor.extra_state_attributes["last_profile_issue_key"], "2025-10-26.oze")
+
+    async def test_response_summary_does_not_expose_measurement_or_message_content(self):
+        error = self.api_module.ApiResponseError("/energia/api", {
+            "success": False, "message": "private message", "data": {"account": "private account"}
+        })
+        self.assertNotIn("private", str(error.summary))
 
     def make_sensor(self):
         modules = {}
@@ -150,6 +179,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         sensor.name = "Counter"
         sensor.entity_id = "sensor.my_virtual_meter"
         sensor._attr_native_value = None
+        sensor._last_measurement = None
         sensor.async_write_ha_state = lambda: None
         self.coordinator.archive["complete"] = True
         self.coordinator.statistics = AsyncMock(return_value=[{

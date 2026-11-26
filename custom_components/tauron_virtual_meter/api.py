@@ -24,6 +24,26 @@ class AuthenticationError(ApiError):
     """Credentials need updating."""
 
 
+class ApiResponseError(ApiError):
+    """Preserve a rejected measurement response for local diagnostics."""
+
+    def __init__(self, endpoint, response):
+        super().__init__("Tauron API did not confirm a successful response")
+        self.endpoint = endpoint
+        self.response = response
+
+    @property
+    def summary(self):
+        result = {"json_type": type(self.response).__name__}
+        if isinstance(self.response, dict):
+            result["fields"] = list(self.response)[:20]
+            result["success_type"] = type(self.response.get("success")).__name__
+            success = self.response.get("success")
+            if isinstance(success, (bool, int, float)) or success is None:
+                result["success"] = success
+        return result
+
+
 class TransientApiError(ApiError):
     """A connection failure or temporary server error; retry with backoff."""
 
@@ -145,7 +165,7 @@ class TauronAPI:
         except ValueError as err:
             raise ApiError("Tauron returned a page instead of JSON") from err
         if not isinstance(result, dict) or result.get("success") is not True:
-            raise ApiError("Tauron API did not confirm a successful response")
+            raise ApiResponseError(endpoint, result)
         return result
 
     async def profile(self, start: date, end: date, direction="consum", profile="full time"):

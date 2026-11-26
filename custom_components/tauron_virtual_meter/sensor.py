@@ -93,5 +93,9 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "history_retry_after": archive.get("history_retry_after"),
             "history_retry_kind": archive.get("history_retry_kind"),
             "last_profile_issue": next(reversed(issues.values()), None),
+            "last_profile_issue_key": next(reversed(issues), None),
+            "last_history_request": archive.get("last_history_request"),
+            "last_api_error_request": archive.get("last_api_error_request"),
+            "last_api_response_summary": archive.get("last_api_response_summary"),
             "counter_origin": "zero_before_first_available_interval",
         }

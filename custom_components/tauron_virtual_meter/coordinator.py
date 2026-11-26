@@ -10,7 +10,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import ApiError, AuthenticationError, RateLimitError, TauronAPI, TransientApiError
+from .api import ApiError, ApiResponseError, AuthenticationError, RateLimitError, TauronAPI, TransientApiError
 from .const import DEFAULT_HISTORY_START, DEFAULT_INTERVAL, DOMAIN
 from .profile import ProfileError, WARSAW, cumulative_statistics, parse_day
 from .storage import async_migrate_storage, storage_key
@@ -115,7 +115,18 @@ class MeterCoordinator(DataUpdateCoordinator):
             cached = await Store(self.hass, 1, storage_key(self.entry.entry_id, key)).async_load()
             if cached is not None:
                 return cached
-        response = await fetch(day, day, direction)
+        request = {"day": day.isoformat(), "kind": kind, "direction": direction}
+        self.archive["last_history_request"] = request
+        try:
+            response = await fetch(day, day, direction)
+        except ApiResponseError as err:
+            self.archive["last_api_error_request"] = request
+            self.archive["last_api_response_summary"] = err.summary
+            await self.raw_save("last_api_error", {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request": request, "endpoint": err.endpoint, "response": err.response,
+            })
+            raise
         await self.raw_save(key, response)
         if stage not in progress["completed"]:
             progress["completed"].append(stage)

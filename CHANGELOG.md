@@ -1,5 +1,13 @@
 # Historia zmian
 
+## Niewydane — main
+
+- Odrzucone odpowiedzi API są zachowywane lokalnie w pliku `last_api_error`,
+  z informacją o dniu, kierunku i rodzaju zapytania. Nie są uznawane za brak danych.
+- Dodano atrybuty `last_history_request`, `last_api_error_request`,
+  `last_api_response_summary` i `last_profile_issue_key` do diagnozowania
+  przerw importu i niejednoznacznych profili.
+
 ## 0.0.2 — 2026-11-26
 
 - Pliki integracji są przechowywane w `/config/.storage/tauron_virtual_meter/`.

@@ -90,12 +90,26 @@ Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
   `rate_limit` ograniczenie Taurona, `api_error` inny błąd API,
   a `authentication` konieczność ponownego logowania.
 - `profile_issue_count` i `last_profile_issue` — problemy z interpretacją profili.
+- `last_profile_issue_key` — dzień i kierunek ostatniego problematycznego profilu.
+- `last_history_request` — ostatnie zapytanie archiwum: dzień, profil/rejestr
+  (`profile`/`readings`) oraz pobór/oddanie (`consum`/`oze`).
+- `last_api_error_request` i `last_api_response_summary` — kontekst ostatniej
+  odrzuconej odpowiedzi JSON oraz jej struktura, bez treści pomiarów i komunikatów.
 - `last_successful_sync` — czas ostatniej udanej synchronizacji bieżących danych.
 
 Jeśli `history_scan_next_day` się zmienia, import trwa. Jeśli nie zmienia się,
 sprawdź ostatni błąd i czas ponowienia. Jeśli `downloaded_interval_count` wynosi
 zero, a `profile_issue_count` rośnie, format odpowiedzi wymaga sprawdzenia;
 samo czekanie na zakończenie skanowania nie rozwiąże tego problemu.
+
+Komunikat `Tauron API did not confirm a successful response` oznacza odrzuconą
+odpowiedź API, a nie potwierdzony brak danych. Taka odpowiedź nie jest zamieniana
+na zerowe zużycie ani uznawana za poprawnie pobrany dzień. Na gałęzi `main` po
+0.0.2 jest dodatkowo zachowywana w pliku
+`/config/.storage/tauron_virtual_meter/tauron_virtual_meter.<entry_id>.last_api_error`.
+Pole `data.response` w tym pliku pozwala ustalić przyczynę; nie przesyłaj całego
+archiwum ani danych logowania. Dodatkowe zapytania o rejestry i same profile
+godzinowe są rozróżniane w `last_api_error_request`.
 
 Przykładowa karta Lovelace — zastąp identyfikator encji swoim:
 

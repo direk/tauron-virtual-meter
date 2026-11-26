@@ -15,6 +15,22 @@ def response(values):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_daily_request_date_takes_precedence_over_tauron_row_date(self):
+        day = date(2026, 11, 20)
+        for source_date in ("20.11.2026", "2026-11-20 00:00:00", "1999-01-01", ""):
+            raw = {"data": {"allData": [{"Date": source_date, "Hour": "1", "EC": "0.45", "Status": "0"}]}}
+            parsed = model.parse_day(day, raw)
+            self.assertEqual(parsed, {model.day_hours(day)[0].isoformat(): "0.45"})
+            self.assertEqual(raw["data"]["allData"][0]["Date"], source_date)
+
+    def test_correcting_row_date_does_not_weaken_hour_validation(self):
+        raw = {"data": {"allData": [
+            {"Date": "1999-01-01", "Hour": "1", "EC": "0.45"},
+            {"Date": "1999-01-01", "Hour": "1", "EC": "0.45"},
+        ]}}
+        with self.assertRaises(model.ProfileError):
+            model.parse_day(date(2026, 11, 20), raw)
+
     def test_decimal_and_missing_values(self):
         parsed = model.parse_day(date(2026, 11, 20), response(["0.1", None, "0,2"] + [0] * 21))
         self.assertEqual(len(parsed), 23)

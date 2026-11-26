@@ -49,6 +49,50 @@ class MeterCoordinator(DataUpdateCoordinator):
         # If the configured lower bound moved earlier, resume below the previous bound.
         if date.fromisoformat(self.archive["cursor"]) >= self.history_start:
             self.archive["complete"] = False
+        await self.repair_cached_dates()
+
+    def apply_profile(self, day, direction, response):
+        """Apply a downloaded or stored daily response with the same rules."""
+        issue_key = f"{day.isoformat()}.{direction}"
+        try:
+            intervals = parse_day(day, response)
+            previous = self.archive["profiles"][direction].get(day.isoformat(), {})
+            withdrawn = previous.keys() - intervals.keys()
+            self.archive["profiles"][direction][day.isoformat()] = {**previous, **intervals}
+            if withdrawn:
+                self.archive["issues"][issue_key] = "Earlier intervals missing in latest response; retained"
+            else:
+                self.archive["issues"].pop(issue_key, None)
+            return True
+        except ProfileError as err:
+            self.archive["issues"][issue_key] = str(err)
+            return False
+
+    async def repair_cached_dates(self):
+        """Recover profiles rejected by the old Date check, without API calls.
+
+        Raw files are keyed by the single day actually requested from Tauron.
+        Keep them untouched, reparse only the specific known defect, and leave
+        unrelated parse errors visible for further diagnosis.
+        """
+        repaired = 0
+        for key, reason in tuple(self.archive["issues"].items()):
+            if reason != "Response contains a different date":
+                continue
+            try:
+                day_text, direction = key.rsplit(".", 1)
+                day = date.fromisoformat(day_text)
+            except ValueError:
+                continue
+            if direction not in ("consum", "oze"):
+                continue
+            response = await Store(self.hass, 1, f"{DOMAIN}.{self.entry.entry_id}.{key}").async_load()
+            if response is not None and self.apply_profile(day, direction, response):
+                repaired += 1
+        if repaired:
+            self.archive["recovered_profile_count"] = self.archive.get("recovered_profile_count", 0) + repaired
+            _LOGGER.info("Odzyskano %s zapisanych profili po poprawce dat", repaired)
+        await self.store.async_save(self.archive)
 
     async def raw_save(self, key, response):
         await Store(self.hass, 1, f"{DOMAIN}.{self.entry.entry_id}.{key}").async_save(response)
@@ -58,20 +102,7 @@ class MeterCoordinator(DataUpdateCoordinator):
             response = await self.api.profile(day, day, direction)
             # Keep the finest response, zones, status flags and unrecognized fields.
             await self.raw_save(f"{day.isoformat()}.{direction}", response)
-            issue_key = f"{day.isoformat()}.{direction}"
-            try:
-                intervals = parse_day(day, response)
-                previous = self.archive["profiles"][direction].get(day.isoformat(), {})
-                # Omit null intervals, but retain an earlier real observation if the
-                # provider temporarily withdraws it. Flag the discrepancy for review.
-                withdrawn = previous.keys() - intervals.keys()
-                self.archive["profiles"][direction][day.isoformat()] = {**previous, **intervals}
-                if withdrawn:
-                    self.archive["issues"][issue_key] = "Earlier intervals missing in latest response; retained"
-                else:
-                    self.archive["issues"].pop(issue_key, None)
-            except ProfileError as err:
-                self.archive["issues"][issue_key] = str(err)
+            self.apply_profile(day, direction, response)
             await asyncio.sleep(0.5)
 
     async def snapshots(self, today):

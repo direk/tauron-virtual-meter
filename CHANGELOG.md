@@ -2,6 +2,11 @@
 
 ## Poprawki na main po 0.0.1 (bez zmiany wersji)
 
+- Usunięto błędne odrzucanie profili dobowych z komunikatem
+  `Response contains a different date`. Pomiary są przypisywane do dnia
+  wskazanego w zapytaniu, zgodnie z zachowaniem Tauron AMIplus.
+- Po restarcie automatycznie przeliczane są zapisane profile odrzucone przez
+  tę kontrolę daty; bez ponownego pobierania i bez zerowania postępu.
 - Sensory pokazują częściową sumę dostępnych pomiarów od razu, bez czekania
   na zakończenie skanowania całego okresu.
 - Atrybuty encji pokazują liczbę pobranych godzin, pozostałych dni oraz ostatni

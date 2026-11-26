@@ -200,6 +200,46 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         exporter.assert_awaited_once()
         self.assertTrue(meter.listeners_updated)
 
+    async def test_recover_cached_date_errors_on_load_without_redownloading(self):
+        meter = self.coordinator
+        meter.archive["issues"] = {
+            "2026-11-20.consum": "Response contains a different date",
+            "2026-11-20.oze": "Response contains a different date",
+            "2026-11-19.oze": "Unknown profile resolution or ambiguous DST day",
+        }
+        meter.store.async_load = AsyncMock(return_value=meter.archive)
+        meter.api.profile = AsyncMock()
+        raw = {"data": {"allData": [{"Date": "1999-01-01", "Hour": "1", "EC": "0.45", "Status": "0"}]}}
+        stored = types.SimpleNamespace(async_load=AsyncMock(return_value=raw))
+        with patch.object(self.module, "Store", return_value=stored):
+            await meter.load()
+            await meter.repair_cached_dates()
+        meter.api.profile.assert_not_awaited()
+        self.assertEqual(stored.async_load.await_count, 2)
+        self.assertEqual(meter.archive["recovered_profile_count"], 2)
+        self.assertEqual(len(meter.archive["profiles"]["consum"]["2026-11-20"]), 1)
+        self.assertEqual(len(meter.archive["profiles"]["oze"]["2026-11-20"]), 1)
+        self.assertEqual(meter.archive["cursor"], "2026-11-20")
+        self.assertEqual(list(meter.archive["issues"]), ["2026-11-19.oze"])
+        self.assertEqual(raw["data"]["allData"][0]["Date"], "1999-01-01")
+
+    async def test_cached_date_repair_keeps_newly_detected_profile_errors(self):
+        meter = self.coordinator
+        meter.archive["issues"]["2026-11-20.consum"] = "Response contains a different date"
+        raw = {"data": {"allData": [{"Date": "wrong", "Hour": "bad", "EC": "1"}]}}
+        with patch.object(self.module, "Store", return_value=types.SimpleNamespace(async_load=AsyncMock(return_value=raw))):
+            await meter.repair_cached_dates()
+        self.assertEqual(meter.archive["issues"]["2026-11-20.consum"], "Unrecognized hour labels")
+        self.assertEqual(meter.archive["profiles"]["consum"], {})
+
+    async def test_missing_cached_file_preserves_error_and_progress(self):
+        meter = self.coordinator
+        meter.archive["issues"]["2026-11-20.consum"] = "Response contains a different date"
+        with patch.object(self.module, "Store", return_value=types.SimpleNamespace(async_load=AsyncMock(return_value=None))):
+            await meter.repair_cached_dates()
+        self.assertEqual(meter.archive["issues"]["2026-11-20.consum"], "Response contains a different date")
+        self.assertEqual(meter.archive["cursor"], "2026-11-20")
+
 
 if __name__ == "__main__":
     unittest.main()

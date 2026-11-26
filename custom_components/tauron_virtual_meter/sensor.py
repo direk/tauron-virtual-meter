@@ -82,6 +82,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "value_is_partial": not archive.get("complete", False),
             "history_days_remaining": remaining,
             "downloaded_interval_count": sum(len(values) for values in profiles.values()),
+            "recovered_profile_count": archive.get("recovered_profile_count", 0),
             "last_history_attempt": archive.get("last_history_attempt"),
             "last_history_error": archive.get("last_history_error"),
             "history_retry_after": archive.get("history_retry_after"),

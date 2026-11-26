@@ -14,6 +14,9 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 **Poprawka po pierwszym wydaniu 0.0.1:** kod na gałęzi `main` pokazuje pobrane
 wartości jeszcze podczas importu historii i udostępnia diagnostykę postępu.
+Usuwa też błędne odrzucanie profili z komunikatem
+`Response contains a different date`. Po restarcie automatycznie przelicza
+oryginalne zapisane odpowiedzi odrzucone z tego powodu, bez ponownego pobierania.
 Wersja pozostaje 0.0.1. Aby otrzymać tę poprawkę bez nowego wydania, pobierz
 [aktualny kod](https://github.com/direk/tauron-virtual-meter/archive/refs/heads/main.zip),
 podmień katalog `/config/custom_components/tauron_virtual_meter` i uruchom
@@ -68,6 +71,8 @@ Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
 - `history_scan_next_day` — dzień, od którego będzie kontynuowany import.
 - `history_days_remaining` — liczba dni pozostałych do sprawdzenia.
 - `downloaded_interval_count` — liczba poprawnie odczytanych godzin dla tej encji.
+- `recovered_profile_count` — liczba zapisanych profili poboru/oddania odzyskanych
+  po usunięciu błędnej kontroli pola daty (łącznie dla obu encji).
 - `last_history_attempt` — ostatnia próba pobrania archiwum.
 - `last_history_error` i `history_retry_after` — powód oraz czas ponowienia po błędzie.
 - `profile_issue_count` i `last_profile_issue` — problemy z interpretacją profili.
@@ -152,6 +157,9 @@ profile dobowe i ostatnie zestawienia kontrolne.
 
 Wersja 0.0.1 importuje **profile godzinowe** zgodnie z numeracją `Hour` od 1
 znaną z integracji źródłowej. Godziny przeliczane są z Europe/Warsaw na UTC.
+Każde zapytanie o profil dotyczy jednego dnia (`from == to`); używana jest data
+tego zapytania, tak jak w Tauron AMIplus. Pole `Date` poszczególnych wierszy
+nie jest podstawą odrzucenia całej doby i pozostaje bez zmian w surowym archiwum.
 Obsługuje 23 i 25 godzin w dniach zmiany czasu, jeśli odpowiedź jednoznacznie
 rozróżnia pomiary. Niejednoznaczne 24 próbki w takiej dobie, profil kwartalny,
 nieznany format i nieprawidłowe wartości pozostają w oryginalnym archiwum;

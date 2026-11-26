@@ -38,6 +38,10 @@ def parse_day(day: date, response: dict):
     Upstream interprets Hour 1 as 00:00–01:00. On DST days, accept only
     complete sequential 1..23/25 arrays or explicit repeated/skipped wall hours.
     Ambiguous 24-slot DST responses are retained raw, never guessed.
+
+    The caller requests exactly one day (from == to). As in Tauron AMIplus,
+    use that requested day, not allData.Date: the latter can describe a
+    different date/format even for a correctly scoped daily response.
     """
     data = response.get("data")
     if not isinstance(data, dict):
@@ -67,8 +71,6 @@ def parse_day(day: date, response: dict):
         labels = [int(row["Hour"]) for row in rows]
     except (KeyError, TypeError, ValueError) as err:
         raise ProfileError("Unrecognized hour labels") from err
-    if any(row.get("Date") not in (None, day.isoformat()) for row in rows):
-        raise ProfileError("Response contains a different date")
     if len(hours) != 24:
         if len(rows) != len(hours):
             raise ProfileError("Incomplete or ambiguous DST day")

@@ -39,6 +39,11 @@ Rozpakuj plik `tauron_virtual_meter-0.0.6.zip`, a następnie:
 3. W Ustawienia → Urządzenia i usługi → Dodaj integrację wybierz **Tauron Virtual Meter**.
 4. Zaloguj się kontem **eLicznik**, wybierz licznik oraz zakres przeszukiwania.
    Dla kolejnych liczników dodaj osobne wpisy integracji.
+5. W urządzeniu integracji sprawdź identyfikatory obu sensorów i dodaj je do
+   `recorder.exclude.entities` zgodnie z [instrukcją poniżej](#jednorazowe-ustawienie-recordera).
+   Ten krok jest wymagany także przy pierwszej instalacji.
+6. Uruchom ponownie cały Home Assistant i sprawdź w atrybutach obu sensorów:
+   `recorder_exclusion_required: false` oraz `state_class: total`.
 
 Wymagany jest współczesny Home Assistant z `recorder`, interfejsem
 `async_import_statistics` oraz metadanymi `mean_type`/`unit_class`.
@@ -48,29 +53,11 @@ Możesz też dodać `https://github.com/direk/tauron-virtual-meter` do HACS
 jako repozytorium niestandardowe typu **Integracja** i zainstalować stamtąd.
 Instalacja przez HACS nie była jeszcze sprawdzana w działającym HA.
 
-## Ikona integracji
-
-Ikona licznika jest dołączona do katalogu `brand/` integracji w rozmiarach
-256 × 256 i 512 × 512 px, z przezroczystym tłem. Home Assistant od wersji
-2026.3 obsługuje takie [lokalne ikony integracji](https://contributors.home-assistant.io/blog/2026/02/24/brands-proxy-api/).
-Po skopiowaniu aktualnego katalogu integracji uruchom ponownie Home Assistant
-i odśwież stronę w przeglądarce.
-
-## Historia tej samej encji
-
-Integracja tworzy encje „Energia pobrana” i „Energia oddana”. Dokładne identyfikatory
-znajdziesz w urządzeniu; HA nadaje je podczas instalacji.
-
-Każda encja otrzymuje natywne statystyki godzinowe pod **własnym `entity_id`**.
-Ich `state` to narastający wirtualny stan licznika, a `sum` to suma dostępnej energii.
-Początek licznika to umowne zero przed pierwszym dostępnym pomiarem. Nie jest to
-fizyczny stan rejestru na liczniku Taurona. Oryginalne rejestry są archiwizowane
-oddzielnie, bez zgadywania godzin, do których się odnoszą.
-
 ### Jednorazowe ustawienie Recordera
 
-Od wersji 0.0.6 należy jednorazowo wyłączyć **automatyczne** zapisywanie tych dwóch
-sensorów w Recorderze. Integracja sprawdza filtr i dopiero wtedy ustawia
+**Wymagane zarówno przy świeżej instalacji, jak i przy aktualizacji do 0.0.6.**
+Dla każdego licznika należy jednorazowo wyłączyć **automatyczne** zapisywanie
+sensorów energii pobranej i oddanej w Recorderze. Integracja sprawdza filtr i dopiero wtedy ustawia
 `state_class: total`. Samo dodanie klasy bez wykluczenia naliczałoby opóźnione
 odczyty według czasu pobrania. Import statystyk godzinowych nadal działa pod tymi
 samymi identyfikatorami i datami pomiarów.
@@ -96,6 +83,17 @@ usuń tylko te wpisy klasy: od 0.0.6 ustawia je integracja.
 Nie jest potrzebne wyłączenie całej integracji ani domeny `sensor` w Recorderze.
 Integracja nie dodaje wykluczeń samodzielnie do globalnej
 konfiguracji Recorder. Szczegóły: [filtry Recorder](https://www.home-assistant.io/integrations/recorder/#configure-filter).
+
+## Historia tej samej encji
+
+Integracja tworzy encje „Energia pobrana” i „Energia oddana”. Dokładne identyfikatory
+znajdziesz w urządzeniu; HA nadaje je podczas instalacji.
+
+Każda encja otrzymuje natywne statystyki godzinowe pod **własnym `entity_id`**.
+Ich `state` to narastający wirtualny stan licznika, a `sum` to suma dostępnej energii.
+Początek licznika to umowne zero przed pierwszym dostępnym pomiarem. Nie jest to
+fizyczny stan rejestru na liczniku Taurona. Oryginalne rejestry są archiwizowane
+oddzielnie, bez zgadywania godzin, do których się odnoszą.
 
 Wersje do 0.0.5 nie deklarowały `state_class`, mimo importowania natywnych
 statystyk. Powoduje to komunikat HA o usunięciu klasy stanu. Nie potwierdzaj
@@ -365,15 +363,6 @@ Braki w pomiarach oznaczają braki w sumie znanych danych, nie zerowe zużycie.
 Nie odtwarzamy dokładnego przyrostu w brakujących godzinach z miesięcznych sum.
 To opóźniony licznik energii z sieci — nie pomiar chwilowej mocy w W ani całości
 zużycia domu z fotowoltaiką. Dostępność i częstotliwość publikacji zależą od Taurona.
-
-## Testy
-
-```sh
-python3 -m unittest discover -s tests -v
-```
-
-Po instalacji należy sprawdzić dobę z eLicznik, sumy kWh, obie zmiany czasu,
-przerwę w dostępie i restart HA. Testy lokalne nie zastępują tego sprawdzenia.
 
 ## Źródła i licencja
 

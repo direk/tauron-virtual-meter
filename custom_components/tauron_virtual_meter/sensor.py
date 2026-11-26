@@ -1,14 +1,18 @@
 """A virtual counter with imported statistics owned by the sensor entity."""
 from datetime import date, timedelta
+import logging
 
+from homeassistant.components.recorder import is_entity_recorded
 from homeassistant.components.recorder.models import StatisticMeanType
 from homeassistant.components.recorder.statistics import async_import_statistics
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import UnitOfEnergy
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, NAME
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -19,8 +23,8 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    # Deliberately no state_class: Recorder must not create a second stream
-    # that counts delayed data as consumption at its download time.
+    # A supported class is safe only after Recorder excludes automatic samples.
+    # Otherwise delayed readings would be compiled under their download time.
     _attr_state_class = None
     _attr_suggested_display_precision = 3
 
@@ -45,6 +49,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         await self.import_statistics()
 
     async def import_statistics(self):
+        self._configure_statistics()
         stats = await self.coordinator.statistics(self.direction)
         if not stats:
             return
@@ -72,6 +77,20 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         for offset in range(0, len(rows), 1000):
             async_import_statistics(self.hass, metadata, rows[offset:offset + 1000])
         return {"entity_id": self.entity_id, "last": stats[-1]}
+
+    def _configure_statistics(self):
+        excluded = not is_entity_recorded(self.hass, self.entity_id)
+        self._attr_state_class = SensorStateClass.TOTAL if excluded else None
+        self._recorder_exclusion_required = not excluded
+        if not excluded and not getattr(self, "_recorder_warning_logged", False):
+            _LOGGER.warning(
+                "%s must be excluded in recorder.exclude.entities and Home Assistant "
+                "restarted to enable state_class without counting delayed readings "
+                "at download time. Keep imported statistics; do not delete them. "
+                "See the integration README: Historia tej samej encji",
+                self.entity_id,
+            )
+        self._recorder_warning_logged = not excluded
 
     @property
     def extra_state_attributes(self):
@@ -120,5 +139,6 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "auto_clean_state_history": self.coordinator.entry.options.get("auto_clean_state_history", False),
             "state_history_cleanup_last_requested": archive.get("state_history_cleanup_last_requested"),
             "state_history_cleanup_error": archive.get("state_history_cleanup_error"),
+            "recorder_exclusion_required": getattr(self, "_recorder_exclusion_required", True),
             "counter_origin": "zero_before_first_available_interval",
         }

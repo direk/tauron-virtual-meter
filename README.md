@@ -1,4 +1,4 @@
-# Tauron Virtual Meter — wersja 0.0.5
+# Tauron Virtual Meter — wersja 0.0.6
 
 <img src="custom_components/tauron_virtual_meter/brand/icon@2x.png" alt="Ikona Tauron Virtual Meter — licznik energii z akcentami magenta" width="128" height="128">
 
@@ -14,13 +14,14 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
-**Aktualizacja do 0.0.5:** zainstaluj nowe wydanie i uruchom ponownie Home Assistant.
-Archiwum zostanie automatycznie przeniesione do `/config/.storage/tauron_virtual_meter/`,
-z zachowaniem pomiarów oraz postępu importu. Zapisane profile odrzucone przez
-wcześniejszą kontrolę daty zostaną ponownie przeliczone. Nie usuwaj wpisu integracji,
-nie przenoś plików ręcznie i nie uruchamiaj skanowania od początku.
-Wersja 0.0.5 wznawia też import zatrzymany na dodatkowym odczycie rejestru;
-odrzucone rejestry są widoczne jako ostrzeżenia i nie blokują pobierania profili.
+**Aktualizacja do 0.0.6:** zainstaluj wydanie i wykonaj
+[jednorazowe ustawienie Recordera](#jednorazowe-ustawienie-recordera), a następnie
+uruchom ponownie cały Home Assistant. Integracja sama nada `state_class: total`
+po potwierdzeniu wykluczenia sensorów. Nie trzeba ustawiać `homeassistant.customize`.
+Nie usuwaj statystyk, wpisu integracji ani lokalnego archiwum i nie rozpoczynaj
+importu od nowa. Zachowane pomiary zostaną ponownie zaimportowane pod te same encje.
+Archiwum nadal znajduje się w `/config/.storage/tauron_virtual_meter/`;
+aktualizacja ze starszych wersji automatycznie przenosi pliki do tego katalogu.
 Szczegóły zmian znajdują się w [historii zmian](CHANGELOG.md).
 
 [![Dodaj repozytorium do Home Assistant przez HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=direk&repository=tauron-virtual-meter&category=integration)
@@ -29,8 +30,8 @@ Kliknij przycisk, wybierz swój Home Assistant i potwierdź dodanie repozytorium
 w HACS. Następnie zainstaluj integrację i uruchom ponownie Home Assistant.
 Przycisk wymaga skonfigurowanego HACS.
 
-Paczka instalacyjna: [wydanie 0.0.5](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.5).
-Rozpakuj plik `tauron_virtual_meter-0.0.5.zip`, a następnie:
+Paczka instalacyjna: [wydanie 0.0.6](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.6).
+Rozpakuj plik `tauron_virtual_meter-0.0.6.zip`, a następnie:
 
 1. Skopiuj katalog `custom_components/tauron_virtual_meter` do
    `/config/custom_components/tauron_virtual_meter` na urządzeniu z Home Assistant.
@@ -66,9 +67,42 @@ Początek licznika to umowne zero przed pierwszym dostępnym pomiarem. Nie jest 
 fizyczny stan rejestru na liczniku Taurona. Oryginalne rejestry są archiwizowane
 oddzielnie, bez zgadywania godzin, do których się odnoszą.
 
-Sensor celowo nie deklaruje `state_class`: automatyczne statystyki HA nie mogą
-równolegle naliczać spóźnionych danych w momencie ich pobrania. Statystyki importuje
-wyłącznie integracja, z datami pomiarów. Podczas skanowania pobrana suma jest
+### Jednorazowe ustawienie Recordera
+
+Od wersji 0.0.6 należy jednorazowo wyłączyć **automatyczne** zapisywanie tych dwóch
+sensorów w Recorderze. Integracja sprawdza filtr i dopiero wtedy ustawia
+`state_class: total`. Samo dodanie klasy bez wykluczenia naliczałoby opóźnione
+odczyty według czasu pobrania. Import statystyk godzinowych nadal działa pod tymi
+samymi identyfikatorami i datami pomiarów.
+
+W `configuration.yaml` dodaj poniższe wykluczenia, zastępując identyfikatory
+rzeczywistymi identyfikatorami obu swoich sensorów:
+
+```yaml
+recorder:
+  exclude:
+    entities:
+      - sensor.twoja_encja_energia_pobrana
+      - sensor.twoja_encja_energia_oddana
+```
+
+Połącz je z istniejącą sekcją `recorder`, jeśli ją masz; nie twórz drugiej.
+Uruchom ponownie cały HA. Atrybut `recorder_exclusion_required: false` potwierdza,
+że integracja widzi wykluczenie; w atrybutach będzie też `state_class: total`.
+Wykluczenia pozostają po kolejnych synchronizacjach, restartach i aktualizacjach.
+Jeśli zmienisz identyfikator sensora albo dodasz kolejny licznik, zaktualizuj listę.
+Jeśli wcześniej dodano `state_class` dla tych sensorów w `homeassistant.customize`,
+usuń tylko te wpisy klasy: od 0.0.6 ustawia je integracja.
+Nie jest potrzebne wyłączenie całej integracji ani domeny `sensor` w Recorderze.
+Integracja nie dodaje wykluczeń samodzielnie do globalnej
+konfiguracji Recorder. Szczegóły: [filtry Recorder](https://www.home-assistant.io/integrations/recorder/#configure-filter).
+
+Wersje do 0.0.5 nie deklarowały `state_class`, mimo importowania natywnych
+statystyk. Powoduje to komunikat HA o usunięciu klasy stanu. Nie potwierdzaj
+usuwania statystyk: to wada integracji, nie powód do kasowania historii.
+Wykluczenie i obsługa klasy w nowym kodzie naprawiają tę sprzeczność.
+
+Podczas skanowania pobrana suma jest
 dostępna w atrybucie `downloaded_energy_kwh`; `value_is_partial: true` oznacza,
 że pobieranie okresu jeszcze trwa. Główny stan jest wtedy `unknown` przy pierwszym
 imporcie albo zachowuje poprzednią wartość podczas ponownego skanowania działającej
@@ -173,7 +207,7 @@ nie jest potrzebne.
 
 ### Automatyczne czyszczenie historii stanów
 
-Na gałęzi `main` po 0.0.5 opcja **Automatycznie czyść historię stanów liczników
+Od wersji 0.0.6 opcja **Automatycznie czyść historię stanów liczników
 po zapisie statystyk** może usunąć ślady pierwszego importu i zapobiegać mieszaniu
 opóźnionych odczytów z czasem ich pobrania. Włącz ją w opcjach integracji.
 Domyślnie jest wyłączona: usuwa całą zwykłą historię zmian stanu wyłącznie
@@ -196,12 +230,18 @@ Kiedy pomiary pojawią się jutro, ponowne pobranie ostatniego tygodnia uzupełn
 statystyki pod godzinami dzisiejszego pomiaru. Ponowne pobranie tych samych
 wartości ich nie dubluje; korekty powodują ponowne przeliczenie sum.
 
-Zwykła Historia rejestruje jednak nowy stan dopiero w chwili pobrania. Sam brak
-`state_class` temu nie zapobiega — wyłącza automatyczne wyliczanie statystyk,
-a nie zapisy stanów. Bez automatycznego czyszczenia albo osobnego wyłączenia
-tych sensorów w filtrze Recorder taki widok może ponownie połączyć poprawne
-statystyki z opóźnionymi stanami. Karta `statistics-graph` z okresem `hour`
-czyta wyłącznie statystyki i nie wymaga tego czyszczenia.
+Bez wykluczenia w Recorderze zwykła Historia rejestruje nowy stan dopiero w chwili
+pobrania i może połączyć te stany z zaimportowanymi statystykami. Wymagane
+wykluczenie zapobiega dopisywaniu kolejnych takich stanów; opcjonalne czyszczenie
+usuwa dawne ślady importu. Karta `statistics-graph` z okresem `hour` czyta
+zaimportowane statystyki. Dla tych sensorów nie ma automatycznie tworzonych
+statystyk pięciominutowych.
+
+Jeśli usunąłeś już statystyki długoterminowe w Narzędziach deweloperskich,
+przeładuj integrację po poprawieniu konfiguracji. Odtworzy historię godzinową
+z lokalnego archiwum po zakończeniu skanowania, bez ponownego pobierania wszystkich
+dawnych dni. Akcja `recorder.purge_entities` usuwa historię stanów; przycisk
+usuwania statystyk długoterminowych usuwa inny zbiór danych.
 
 ## Synchronizacja i pełny dostępny okres
 

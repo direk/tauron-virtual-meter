@@ -1,12 +1,18 @@
 # Historia zmian
 
-## Niewydane — main
+## 0.0.6 — 2026-11-26
 
+- Naprawiono zgodność importowanych statystyk z kontrolą klasy stanu HA:
+  po wykluczeniu sensorów w Recorderze integracja deklaruje `state_class: total`.
+  Bez wykluczenia zachowuje brak klasy, ostrzega w logu i udostępnia atrybut
+  `recorder_exclusion_required`; nie uruchamia błędnego naliczania opóźnionych danych.
+- Udokumentowano wymagane wykluczenie w `configuration.yaml` oraz przywracanie
+  statystyk z archiwum. Nie usuwać statystyk w odpowiedzi na ostrzeżenie HA.
 - Dodano domyślnie wyłączoną opcję automatycznego czyszczenia zwykłej historii
   stanów liczników po imporcie i każdej synchronizacji. Statystyki i archiwum
   pozostają zachowane; czyszczenie wymaga potwierdzenia zapisu ostatniej statystyki.
 - Dodano atrybuty statusu czyszczenia i opis zachowania dla opóźnionych odczytów.
-- Weryfikacja: 86 testów lokalnych, w tym kontrola zakresu czyszczenia, brak
+- Weryfikacja: 88 testów lokalnych, w tym kontrola zakresu czyszczenia, brak
   kasowania przy błędzie bazy i import opóźnionych pomiarów bez podwójnego naliczania.
 
 ## 0.0.5 — 2026-11-26

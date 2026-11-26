@@ -231,9 +231,11 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                      "homeassistant.components.sensor", "homeassistant.const", "homeassistant.helpers.entity"):
             modules[name] = types.ModuleType(name)
         imports = []
+        modules["homeassistant.components.recorder"].is_entity_recorded = lambda *args: False
         modules["homeassistant.components.recorder.models"].StatisticMeanType = types.SimpleNamespace(NONE=0)
         modules["homeassistant.components.recorder.statistics"].async_import_statistics = lambda *args: imports.append(args)
         modules["homeassistant.components.sensor"].SensorDeviceClass = types.SimpleNamespace(ENERGY="energy")
+        modules["homeassistant.components.sensor"].SensorStateClass = types.SimpleNamespace(TOTAL="total")
         modules["homeassistant.components.sensor"].SensorEntity = type("SensorEntity", (), {})
         modules["homeassistant.const"].UnitOfEnergy = types.SimpleNamespace(KILO_WATT_HOUR="kWh")
         modules["homeassistant.helpers.entity"].DeviceInfo = lambda **kwargs: kwargs
@@ -262,9 +264,33 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         metadata, rows = imports[0][1:]
         self.assertEqual(metadata["statistic_id"], "sensor.my_virtual_meter")
         self.assertEqual(metadata["source"], "recorder")
-        self.assertIsNone(sensor._attr_state_class)
+        self.assertEqual(sensor._attr_state_class, "total")
+        self.assertFalse(sensor.extra_state_attributes["recorder_exclusion_required"])
         self.assertEqual([row["sum"] for row in rows], [0.0, 2.5])
         self.assertEqual(sensor._attr_native_value, 2.5)
+
+    async def test_recorded_sensor_never_enables_automatic_statistics_for_delayed_data(self):
+        sensor, imports = self.make_sensor()
+        module = sys.modules["test_tauron_adapter.sensor"]
+        with patch.object(module, "is_entity_recorded", return_value=True):
+            with self.assertLogs(module._LOGGER, level="WARNING") as log:
+                await sensor.import_statistics()
+                await sensor.import_statistics()
+        self.assertIsNone(sensor._attr_state_class)
+        self.assertTrue(sensor.extra_state_attributes["recorder_exclusion_required"])
+        self.assertEqual(len(log.output), 1)
+        self.assertIn(sensor.entity_id, log.output[0])
+        self.assertEqual(len(imports), 2)
+
+    async def test_removing_recorder_exclusion_disables_state_class_again(self):
+        sensor, _ = self.make_sensor()
+        await sensor.import_statistics()
+        self.assertEqual(sensor._attr_state_class, "total")
+        module = sys.modules["test_tauron_adapter.sensor"]
+        with patch.object(module, "is_entity_recorded", return_value=True):
+            with self.assertLogs(module._LOGGER, level="WARNING"):
+                await sensor.import_statistics()
+        self.assertIsNone(sensor._attr_state_class)
 
     async def test_backfill_exposes_progress_without_changing_main_counter(self):
         sensor, imports = self.make_sensor()

@@ -1,6 +1,6 @@
 # Historia zmian
 
-## Niewydane — main
+## 0.0.3 — 2026-11-26
 
 - Odrzucenie dodatkowego odczytu rejestru nie blokuje już pobierania profili
   kolejnych dni. Odpowiedź jest archiwizowana, a brak rejestru sygnalizują
@@ -12,6 +12,10 @@
 - Dodano atrybuty `last_history_request`, `last_api_error_request`,
   `last_api_response_summary` i `last_profile_issue_key` do diagnozowania
   przerw importu i niejednoznacznych profili.
+
+Weryfikacja: 55 testów lokalnych, w tym kontynuacja importu po odrzuceniu
+rejestru, zachowanie blokady dla odrzuconych profili oraz archiwizacja błędów.
+Brak automatycznego testu uruchomieniowego w działającym Home Assistant.
 
 ## 0.0.2 — 2026-11-26
 

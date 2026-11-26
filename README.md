@@ -1,4 +1,4 @@
-# Tauron Virtual Meter — wersja 0.0.2
+# Tauron Virtual Meter — wersja 0.0.3
 
 <img src="custom_components/tauron_virtual_meter/brand/icon@2x.png" alt="Ikona Tauron Virtual Meter — licznik energii z akcentami magenta" width="128" height="128">
 
@@ -14,11 +14,13 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
-**Aktualizacja do 0.0.2:** zainstaluj nowe wydanie i uruchom ponownie Home Assistant.
+**Aktualizacja do 0.0.3:** zainstaluj nowe wydanie i uruchom ponownie Home Assistant.
 Archiwum zostanie automatycznie przeniesione do `/config/.storage/tauron_virtual_meter/`,
 z zachowaniem pomiarów oraz postępu importu. Zapisane profile odrzucone przez
 wcześniejszą kontrolę daty zostaną ponownie przeliczone. Nie usuwaj wpisu integracji,
 nie przenoś plików ręcznie i nie uruchamiaj skanowania od początku.
+Wersja 0.0.3 wznawia też import zatrzymany na dodatkowym odczycie rejestru;
+odrzucone rejestry są widoczne jako ostrzeżenia i nie blokują pobierania profili.
 Szczegóły zmian znajdują się w [historii zmian](CHANGELOG.md).
 
 [![Dodaj repozytorium do Home Assistant przez HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=direk&repository=tauron-virtual-meter&category=integration)
@@ -27,8 +29,8 @@ Kliknij przycisk, wybierz swój Home Assistant i potwierdź dodanie repozytorium
 w HACS. Następnie zainstaluj integrację i uruchom ponownie Home Assistant.
 Przycisk wymaga skonfigurowanego HACS.
 
-Paczka instalacyjna: [wydanie 0.0.2](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.2).
-Rozpakuj plik `tauron_virtual_meter-0.0.2.zip`, a następnie:
+Paczka instalacyjna: [wydanie 0.0.3](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.3).
+Rozpakuj plik `tauron_virtual_meter-0.0.3.zip`, a następnie:
 
 1. Skopiuj katalog `custom_components/tauron_virtual_meter` do
    `/config/custom_components/tauron_virtual_meter` na urządzeniu z Home Assistant.
@@ -111,8 +113,8 @@ Odrzucony dodatkowy rejestr (`readings`) jest zachowywany jako ostrzeżenie i ni
 blokuje kolejnych dni, jeśli zapytania o profile doby już się powiodły.
 Po aktualizacji usuwana jest stara przerwa po takim błędzie rejestru; postęp
 i pobrane odpowiedzi pozostają zachowane. Limity Taurona i błędy połączenia
-nadal mają swoje przerwy. Na gałęzi `main` po
-0.0.2 jest dodatkowo zachowywana w pliku
+nadal mają swoje przerwy. Od wersji 0.0.3 odrzucona odpowiedź jest również
+zachowywana w pliku
 `/config/.storage/tauron_virtual_meter/tauron_virtual_meter.<entry_id>.last_api_error`.
 Pole `data.response` w tym pliku pozwala ustalić przyczynę; nie przesyłaj całego
 archiwum ani danych logowania. Dodatkowe zapytania o rejestry i same profile
@@ -225,7 +227,7 @@ licznika. Nie obejmuje faktur, umów, płatności ani nieodkrytych endpointów M
 Nie pobiera historycznych zestawień miesiąc/rok: zachowuje ich dokładniejsze
 profile dobowe i ostatnie zestawienia kontrolne.
 
-Wersja 0.0.2 importuje **profile godzinowe** zgodnie z numeracją `Hour` od 1
+Wersja 0.0.3 importuje **profile godzinowe** zgodnie z numeracją `Hour` od 1
 znaną z integracji źródłowej. Godziny przeliczane są z Europe/Warsaw na UTC.
 Każde zapytanie o profil dotyczy jednego dnia (`from == to`); używana jest data
 tego zapytania, tak jak w Tauron AMIplus. Pole `Date` poszczególnych wierszy

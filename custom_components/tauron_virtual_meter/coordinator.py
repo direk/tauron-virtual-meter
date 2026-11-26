@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import ApiError, AuthenticationError, RateLimitError, TauronAPI, TransientApiError
 from .const import DEFAULT_HISTORY_START, DEFAULT_INTERVAL, DOMAIN
 from .profile import ProfileError, WARSAW, cumulative_statistics, parse_day
+from .storage import async_migrate_storage, storage_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class MeterCoordinator(DataUpdateCoordinator):
                          update_interval=timedelta(minutes=minutes) if minutes else None)
         self.entry = entry
         self.api = TauronAPI(session, entry.data["username"], entry.data["password"])
-        self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.index")
+        self.store = Store(hass, 1, storage_key(entry.entry_id, "index"))
         self.archive = None
         self.lock = asyncio.Lock()
         self.exporters = []
@@ -41,6 +42,7 @@ class MeterCoordinator(DataUpdateCoordinator):
         return date.fromisoformat(self.archive["cursor"])
 
     async def load(self):
+        await async_migrate_storage(self.hass, self.entry.entry_id)
         self.archive = await self.store.async_load() or {
             "profiles": {"consum": {}, "oze": {}}, "issues": {},
             "cursor": (datetime.now(WARSAW).date() - timedelta(days=1)).isoformat(),
@@ -90,7 +92,7 @@ class MeterCoordinator(DataUpdateCoordinator):
                 continue
             if direction not in ("consum", "oze"):
                 continue
-            response = await Store(self.hass, 1, f"{DOMAIN}.{self.entry.entry_id}.{key}").async_load()
+            response = await Store(self.hass, 1, storage_key(self.entry.entry_id, key)).async_load()
             if response is not None and self.apply_profile(day, direction, response):
                 repaired += 1
         if repaired:
@@ -99,7 +101,7 @@ class MeterCoordinator(DataUpdateCoordinator):
         await self.store.async_save(self.archive)
 
     async def raw_save(self, key, response):
-        await Store(self.hass, 1, f"{DOMAIN}.{self.entry.entry_id}.{key}").async_save(response)
+        await Store(self.hass, 1, storage_key(self.entry.entry_id, key)).async_save(response)
 
     async def history_response(self, day, kind, direction, fetch):
         """Resume the failed day's requests without reusing old data on a rescan."""
@@ -110,7 +112,7 @@ class MeterCoordinator(DataUpdateCoordinator):
         stage = f"{kind}.{direction}"
         key = f"{day.isoformat()}.{'readings.' if kind == 'readings' else ''}{direction}"
         if stage in progress["completed"]:
-            cached = await Store(self.hass, 1, f"{DOMAIN}.{self.entry.entry_id}.{key}").async_load()
+            cached = await Store(self.hass, 1, storage_key(self.entry.entry_id, key)).async_load()
             if cached is not None:
                 return cached
         response = await fetch(day, day, direction)

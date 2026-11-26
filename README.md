@@ -182,13 +182,22 @@ dni nadal pobierają świeże dane, aby wykrywać korekty.
 
 ## Zachowane dane i dokładność
 
-W `/config/.storage/tauron_virtual_meter.*` zapisywane są oryginalne odpowiedzi
+W `/config/.storage/tauron_virtual_meter/` zapisywane są oryginalne odpowiedzi
 profili dobowych dla poboru i oddania oraz odczyty rejestrów dla każdego dnia.
 Obejmuje to pola taryf, stref, statusów oraz inne pola zwracane przez te endpointy.
 Zachowywana jest też lista liczników i ostatnie odpowiedzi zestawień miesiąca/roku.
 Nieznane pola nie są usuwane. Kolejne pobranie zastępuje surową odpowiedź danego
 dnia; nie jest to archiwum każdej wersji odpowiedzi. Pliki mogą zawierać dane
 prywatne — uwzględnij je w swoich kopiach zapasowych.
+
+Po aktualizacji i restarcie integracja automatycznie przenosi swoje dotychczasowe
+pliki z `/config/.storage/tauron_virtual_meter.*` do tego podkatalogu. Nazwy plików
+pozostają bez zmian: np. `tauron_virtual_meter.<entry_id>.index`. Zachowane są
+odczyty, postęp skanowania, terminy ponawiania i częściowo przetwarzany dzień.
+Nie przenoś plików ręcznie i nie uruchamiaj pełnego skanowania od początku.
+Migracja obejmuje pliki danego wpisu integracji i wznawia się po przerwaniu.
+Jeśli istnieją już różne pliki pod tą samą nazwą, aktywny plik w nowym katalogu
+pozostaje, a starszy trafia do podkatalogu `legacy/` do sprawdzenia.
 
 „Wszystkie dane” dotyczy znanych endpointów pomiarowych **eLicznik** dla wybranego
 licznika. Nie obejmuje faktur, umów, płatności ani nieodkrytych endpointów Mój Tauron.

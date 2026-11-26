@@ -53,6 +53,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.context.enter_context(patch.dict(sys.modules, modules))
         self.api_module = importlib.import_module("test_tauron_adapter.api")
         self.module = importlib.import_module("test_tauron_adapter.coordinator")
+        self.module.async_migrate_storage = AsyncMock()
         # Remove adapter submodules too; subsequent cases receive fresh doubles.
         self.addCleanup(lambda: [sys.modules.pop(key, None) for key in list(sys.modules)
                                  if key.startswith("test_tauron_adapter.")])
@@ -289,7 +290,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         files = {}
 
         async def raw_save(key, value):
-            files[f"{self.module.DOMAIN}.test.{key}"] = value
+            files[self.module.storage_key("test", key)] = value
 
         def cached_store(hass, version, key):
             return types.SimpleNamespace(async_load=AsyncMock(return_value=files.get(key)))
@@ -350,6 +351,24 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(self.api_module.RateLimitError) as caught:
             await api._text("GET", "https://elicznik.tauron-dystrybucja.pl")
         self.assertEqual(caught.exception.retry_after_seconds, 7200)
+
+    async def test_storage_migration_finishes_before_index_is_loaded(self):
+        meter = self.coordinator
+
+        async def read_index():
+            self.module.async_migrate_storage.assert_awaited_once_with(meter.hass, "test")
+            return meter.archive
+
+        meter.store.async_load = AsyncMock(side_effect=read_index)
+        await meter.load()
+
+    async def test_raw_save_writes_inside_integration_subdirectory(self):
+        store = types.SimpleNamespace(async_save=AsyncMock())
+        with patch.object(self.module, "Store", return_value=store) as factory:
+            await self.coordinator.raw_save("2025-01-13.consum", {"data": []})
+        self.assertEqual(factory.call_args.args[2],
+                         "tauron_virtual_meter/tauron_virtual_meter.test.2025-01-13.consum")
+        store.async_save.assert_awaited_once_with({"data": []})
 
 
 if __name__ == "__main__":

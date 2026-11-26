@@ -2,6 +2,9 @@
 
 ## Poprawki na main po 0.0.1 (bez zmiany wersji)
 
+- Pliki integracji są przechowywane w `/config/.storage/tauron_virtual_meter/`.
+  Przy starcie dotychczasowe archiwum jest automatycznie przenoszone, z zachowaniem
+  pomiarów i postępu. Migracja jest wznawialna; konflikty są zachowywane w `legacy/`.
 - Chwilowe błędy połączenia i HTTP 5xx mają ponowienia po 1, 2, 4, 8 i maksymalnie
   15 minutach zamiast stałej godziny. Wyraźne limity Taurona nadal wymagają
   dłuższej przerwy; HTTP `Retry-After` jest respektowane.

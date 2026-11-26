@@ -559,6 +559,77 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attributes["last_availability_result"]["consum"], "empty")
         self.assertEqual(attributes["first_available_measurement"], "2026-11-20T00:00:00+00:00")
 
+    async def test_cleanup_is_opt_in_and_requires_finished_scan_and_running_ha(self):
+        meter = self.coordinator
+        meter.hass.is_running = True
+        meter.archive["complete"] = True
+        meter.exporters = [AsyncMock(return_value={"entity_id": "sensor.test_meter", "last": {"sum": 1}})]
+        with patch.object(self.module, "async_clean_state_history", new=AsyncMock(return_value=True)) as cleanup:
+            await meter.export()
+            cleanup.assert_not_awaited()
+            self.entry.options["auto_clean_state_history"] = True
+            meter.archive["complete"] = False
+            await meter.export()
+            cleanup.assert_not_awaited()
+            meter.archive["complete"] = True
+            meter.hass.is_running = False
+            await meter.export()
+            cleanup.assert_not_awaited()
+            meter.hass.is_running = True
+            await meter.export()
+            cleanup.assert_awaited_once()
+        self.assertIsNotNone(meter.archive["state_history_cleanup_last_requested"])
+
+    async def test_cleanup_failure_does_not_fail_successful_import(self):
+        meter = self.coordinator
+        meter.hass.is_running = True
+        self.entry.options["auto_clean_state_history"] = True
+        meter.archive["complete"] = True
+        meter.exporters = [AsyncMock(return_value={"entity_id": "sensor.test_meter", "last": {"sum": 1}})]
+        with patch.object(self.module, "async_clean_state_history", new=AsyncMock(side_effect=RuntimeError("failed"))):
+            await meter.export()
+        self.assertEqual(meter.archive["state_history_cleanup_error"], "RuntimeError")
+
+    async def test_delayed_data_is_backfilled_to_measurement_day_without_double_counting(self):
+        meter = self.coordinator
+        meter.snapshots = AsyncMock()
+        meter.raw_save = AsyncMock()
+        released = False
+
+        async def profile(start, end, direction):
+            if start == date(2026, 11, 25):
+                values = [1]*24
+            elif start == date(2026, 11, 26) and released:
+                values = [2]*24
+            else:
+                values = [None]*24
+            return {"success": True, "data": {"values": values}}
+
+        meter.api = types.SimpleNamespace(select=AsyncMock(), profile=AsyncMock(side_effect=profile), meters={})
+        real_datetime = self.module.datetime
+        current_day = date(2026, 11, 26)
+
+        class Clock(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return real_datetime(current_day.year, current_day.month, current_day.day, 16,
+                                     tzinfo=self.module.WARSAW).astimezone(tz)
+
+        profile_model = importlib.import_module("test_tauron_adapter.profile")
+        with patch.object(self.module, "datetime", Clock), patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter._async_update_data()
+            first = profile_model.cumulative_statistics(meter.archive["profiles"]["consum"])
+            self.assertEqual(first[-1]["sum"], 24)
+            released = True
+            current_day = date(2026, 11, 27)
+            await meter._async_update_data()
+            second = profile_model.cumulative_statistics(meter.archive["profiles"]["consum"])
+            self.assertEqual(second[-1]["sum"], 72)
+            self.assertEqual(second[-1]["start"].astimezone(self.module.WARSAW).date(), date(2026, 11, 26))
+            await meter._async_update_data()
+            third = profile_model.cumulative_statistics(meter.archive["profiles"]["consum"])
+            self.assertEqual(third[-1]["sum"], 72)
+
     async def test_rejected_month_summary_falls_back_to_daily_scan(self):
         meter = self.prepare_month_discovery()
         meter.api.profile.side_effect = self.api_module.ApiResponseError("/energia/api", {"success": False})

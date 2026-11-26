@@ -15,6 +15,7 @@ from .api import ApiError, ApiResponseError, AuthenticationError, RateLimitError
 from .const import DEFAULT_HISTORY_START, DEFAULT_INTERVAL, DOMAIN
 from .profile import ProfileError, WARSAW, cumulative_statistics, month_summary_status, parse_day
 from .storage import async_migrate_storage, storage_key
+from .history import async_clean_state_history
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class MeterCoordinator(DataUpdateCoordinator):
         self.exporters = []
         self._retry_after = None
         self._history_task = None
+        self._startup_cleanup_task = None
         self._stopping = False
 
     @property
@@ -267,10 +269,12 @@ class MeterCoordinator(DataUpdateCoordinator):
 
     async def stop(self):
         self._stopping = True
-        if self._history_task is not None:
-            self._history_task.cancel()
+        for task in (self._history_task, self._startup_cleanup_task):
+            if task is None or task is asyncio.current_task():
+                continue
+            task.cancel()
             try:
-                await self._history_task
+                await task
             except asyncio.CancelledError:
                 pass
 
@@ -350,8 +354,26 @@ class MeterCoordinator(DataUpdateCoordinator):
     async def export(self):
         # Sensors expose partial totals as progress attributes, then publish
         # the main counter and hourly statistics once its origin is established.
+        imported = {}
         for exporter in tuple(self.exporters):
-            await exporter()
+            result = await exporter()
+            if isinstance(result, dict) and "entity_id" in result and "last" in result:
+                imported[result["entity_id"]] = result["last"]
+        if (imported and self.archive.get("complete")
+                and self.entry.options.get("auto_clean_state_history", False)
+                and self.hass.is_running):
+            try:
+                requested = await async_clean_state_history(self.hass, imported)
+                if requested:
+                    self.archive["state_history_cleanup_last_requested"] = datetime.now(timezone.utc).isoformat()
+                    self.archive["state_history_cleanup_error"] = None
+                else:
+                    self.archive["state_history_cleanup_error"] = "Committed statistics did not match import; no states removed"
+            except Exception as err:
+                # A cleanup failure must not invalidate a successful Tauron sync.
+                self.archive["state_history_cleanup_error"] = type(err).__name__
+                _LOGGER.warning("Nie zlecono czyszczenia historii stanów: %s", type(err).__name__)
+            await self.store.async_save(self.archive)
 
     async def statistics(self, direction):
         return await self.hass.async_add_executor_job(

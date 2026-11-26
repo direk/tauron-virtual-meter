@@ -17,6 +17,7 @@ def options_schema(options):
         vol.Required("history_start", default=options.get("history_start", DEFAULT_HISTORY_START)): selector({"date": {}}),
         vol.Required("interval_minutes", default=options.get("interval_minutes", DEFAULT_INTERVAL)): vol.All(vol.Coerce(int), vol.Range(min=0, max=10080)),
         vol.Required("auto_detect_history", default=options.get("auto_detect_history", True)): bool,
+        vol.Required("auto_clean_state_history", default=options.get("auto_clean_state_history", False)): bool,
     })
 
 
@@ -75,7 +76,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title=f"Tauron {user_input['meter_id']}",
                     data={**self.credentials, "meter_id": user_input["meter_id"]},
-                    options={key: user_input[key] for key in ("history_start", "interval_minutes", "auto_detect_history")},
+                    options={key: user_input[key] for key in ("history_start", "interval_minutes", "auto_detect_history", "auto_clean_state_history")},
                 )
         schema = options_schema(user_input or {}).extend({
             vol.Required("meter_id"): selector({"select": {"options": [

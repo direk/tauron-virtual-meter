@@ -1,5 +1,14 @@
 # Historia zmian
 
+## Niewydane — main
+
+- Dodano domyślnie wyłączoną opcję automatycznego czyszczenia zwykłej historii
+  stanów liczników po imporcie i każdej synchronizacji. Statystyki i archiwum
+  pozostają zachowane; czyszczenie wymaga potwierdzenia zapisu ostatniej statystyki.
+- Dodano atrybuty statusu czyszczenia i opis zachowania dla opóźnionych odczytów.
+- Weryfikacja: 86 testów lokalnych, w tym kontrola zakresu czyszczenia, brak
+  kasowania przy błędzie bazy i import opóźnionych pomiarów bez podwójnego naliczania.
+
 ## 0.0.5 — 2026-11-26
 
 - Dodano automatyczne sprawdzanie dostępności danych w zestawieniach miesięcznych

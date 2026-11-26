@@ -109,6 +109,11 @@ Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
 - `reading_issue_count`, `last_reading_issue_key`, `last_reading_issue` — problemy
   z dodatkowymi odczytami rejestrów; nie są one źródłem sum wirtualnego licznika.
 - `last_successful_sync` — czas ostatniej udanej synchronizacji bieżących danych.
+- `auto_clean_state_history` — czy włączono automatyczne czyszczenie historii stanów.
+- `state_history_cleanup_last_requested` — czas ostatniego zlecenia czyszczenia
+  Recorderowi; samo czyszczenie jest wykonywane asynchronicznie.
+- `state_history_cleanup_error` — przyczyna pominięcia czyszczenia, np. brak
+  potwierdzenia zapisu statystyk. Nie unieważnia udanej synchronizacji Taurona.
 
 Jeśli `history_scan_next_day` się zmienia, import trwa. Jeśli nie zmienia się,
 sprawdź ostatni błąd i czas ponowienia. Jeśli `downloaded_interval_count` wynosi
@@ -165,6 +170,38 @@ importu, a nie rozkład zużycia. Nowy kod nie usuwa zapisanych już stanów.
 Prawidłowy wykres godzinowy uzyskasz kartą statystyk powyżej (`state` dla stanu
 licznika, `change` dla energii w każdej godzinie); ponowne pobieranie archiwum
 nie jest potrzebne.
+
+### Automatyczne czyszczenie historii stanów
+
+Na gałęzi `main` po 0.0.5 opcja **Automatycznie czyść historię stanów liczników
+po zapisie statystyk** może usunąć ślady pierwszego importu i zapobiegać mieszaniu
+opóźnionych odczytów z czasem ich pobrania. Włącz ją w opcjach integracji.
+Domyślnie jest wyłączona: usuwa całą zwykłą historię zmian stanu wyłącznie
+liczników poboru i oddania tego wpisu integracji. Statystyki godzinowe i pliki
+archiwum pozostają zachowane. Po włączeniu wykonuje się po zakończonym imporcie,
+przy uruchomieniu już zsynchronizowanej integracji i po kolejnych synchronizacjach.
+
+Integracja czeka na przetworzenie kolejki Recorder i sprawdza datę, stan oraz
+sumę ostatniej zapisanej statystyki dla swoich sensorów. Dopiero po zgodnym
+odczycie zwrotnym wywołuje standardową akcję `recorder.purge_entities` z listą
+konkretnych identyfikatorów i `keep_days: 0`. Brak potwierdzenia lub błąd bazy
+powoduje pominięcie czyszczenia. Kod nie usuwa statystyk i nie wykonuje własnego
+SQL usuwającego dane. Przy starcie HA czeka z czyszczeniem do zakończenia startu.
+
+### Dane opublikowane z opóźnieniem
+
+Jeśli dziś o 16:10 eLicznik nie ma jeszcze dzisiejszych odczytów, integracja
+zachowuje ostatnią znaną wartość; nie szacuje energii za brakujące godziny.
+Kiedy pomiary pojawią się jutro, ponowne pobranie ostatniego tygodnia uzupełni
+statystyki pod godzinami dzisiejszego pomiaru. Ponowne pobranie tych samych
+wartości ich nie dubluje; korekty powodują ponowne przeliczenie sum.
+
+Zwykła Historia rejestruje jednak nowy stan dopiero w chwili pobrania. Sam brak
+`state_class` temu nie zapobiega — wyłącza automatyczne wyliczanie statystyk,
+a nie zapisy stanów. Bez automatycznego czyszczenia albo osobnego wyłączenia
+tych sensorów w filtrze Recorder taki widok może ponownie połączyć poprawne
+statystyki z opóźnionymi stanami. Karta `statistics-graph` z okresem `hour`
+czyta wyłącznie statystyki i nie wymaga tego czyszczenia.
 
 ## Synchronizacja i pełny dostępny okres
 

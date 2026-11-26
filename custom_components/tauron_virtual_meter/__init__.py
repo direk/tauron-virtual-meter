@@ -1,4 +1,5 @@
 """Tauron Virtual Meter setup."""
+import asyncio
 from datetime import timedelta
 
 import voluptuous as vol
@@ -22,6 +23,21 @@ async def async_setup_entry(hass, entry):
         raise
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, [Platform.SENSOR])
+    if entry.options.get("auto_clean_state_history", False):
+        from homeassistant.helpers.start import async_at_started
+
+        async def clean_after_start(_hass):
+            # Recorder must be able to commit queued statistics; waiting for
+            # it inside integration startup would hold up HA's startup itself.
+            coordinator._startup_cleanup_task = asyncio.current_task()
+            try:
+                async with coordinator.lock:
+                    await coordinator.export()
+                    coordinator.async_update_listeners()
+            finally:
+                coordinator._startup_cleanup_task = None
+
+        entry.async_on_unload(async_at_started(hass, clean_after_start))
     entry.async_on_unload(async_track_time_interval(hass, coordinator.history_tick, timedelta(minutes=1)))
     entry.async_on_unload(entry.add_update_listener(_reload))
 

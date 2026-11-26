@@ -17,7 +17,11 @@
           "meter_id": "Licznik",
           "history_start": "Początek przeszukiwania historii",
           "interval_minutes": "Odstęp synchronizacji w minutach (0 = własna automatyzacja)",
-          "auto_detect_history": "Automatycznie wykrywaj dostępność i pomijaj puste miesiące"
+          "auto_detect_history": "Automatycznie wykrywaj dostępność i pomijaj puste miesiące",
+          "auto_clean_state_history": "Automatycznie czyść historię stanów liczników po zapisie statystyk"
+        },
+        "data_description": {
+          "auto_clean_state_history": "Usuwa zwykłą historię zmian stanu tylko liczników poboru i oddania tej integracji, po imporcie i kolejnych synchronizacjach. Zachowuje statystyki godzinowe oraz archiwum eLicznik."
         }
       }
     },
@@ -40,7 +44,11 @@
         "data": {
           "history_start": "Początek przeszukiwania historii",
           "interval_minutes": "Odstęp synchronizacji w minutach (0 = własna automatyzacja)",
-          "auto_detect_history": "Automatycznie wykrywaj dostępność i pomijaj puste miesiące"
+          "auto_detect_history": "Automatycznie wykrywaj dostępność i pomijaj puste miesiące",
+          "auto_clean_state_history": "Automatycznie czyść historię stanów liczników po zapisie statystyk"
+        },
+        "data_description": {
+          "auto_clean_state_history": "Usuwa zwykłą historię zmian stanu tylko liczników poboru i oddania tej integracji, po imporcie i kolejnych synchronizacjach. Zachowuje statystyki godzinowe oraz archiwum eLicznik."
         }
       }
     },

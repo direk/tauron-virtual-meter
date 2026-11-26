@@ -71,6 +71,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         rows = [baseline, *stats]
         for offset in range(0, len(rows), 1000):
             async_import_statistics(self.hass, metadata, rows[offset:offset + 1000])
+        return {"entity_id": self.entity_id, "last": stats[-1]}
 
     @property
     def extra_state_attributes(self):
@@ -116,5 +117,8 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "reading_issue_count": len(reading_issues),
             "last_reading_issue_key": next(reversed(reading_issues), None),
             "last_reading_issue": next(reversed(reading_issues.values()), None),
+            "auto_clean_state_history": self.coordinator.entry.options.get("auto_clean_state_history", False),
+            "state_history_cleanup_last_requested": archive.get("state_history_cleanup_last_requested"),
+            "state_history_cleanup_error": archive.get("state_history_cleanup_error"),
             "counter_origin": "zero_before_first_available_interval",
         }

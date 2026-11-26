@@ -147,6 +147,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         sensor.hass = object()
         sensor.name = "Counter"
         sensor.entity_id = "sensor.my_virtual_meter"
+        sensor._attr_native_value = None
         sensor.async_write_ha_state = lambda: None
         self.coordinator.archive["complete"] = True
         self.coordinator.statistics = AsyncMock(return_value=[{
@@ -165,14 +166,24 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["sum"] for row in rows], [0.0, 2.5])
         self.assertEqual(sensor._attr_native_value, 2.5)
 
-    async def test_sensor_shows_partial_value_without_waiting_for_history(self):
+    async def test_backfill_exposes_progress_without_changing_main_counter(self):
         sensor, imports = self.make_sensor()
         self.coordinator.archive["complete"] = False
         await sensor.import_statistics()
-        self.assertEqual(sensor._attr_native_value, 2.5)
+        self.assertIsNone(sensor._attr_native_value)
+        self.assertEqual(sensor.extra_state_attributes["downloaded_energy_kwh"], 2.5)
         self.assertEqual(imports, [])
         self.assertTrue(sensor.extra_state_attributes["value_is_partial"])
         self.assertEqual(sensor.extra_state_attributes["history_days_remaining"], 1)
+
+    async def test_rescan_does_not_change_existing_counter_to_partial_sum(self):
+        sensor, imports = self.make_sensor()
+        sensor._attr_native_value = 15000
+        self.coordinator.archive["complete"] = False
+        await sensor.import_statistics()
+        self.assertEqual(sensor._attr_native_value, 15000)
+        self.assertEqual(sensor.extra_state_attributes["downloaded_energy_kwh"], 2.5)
+        self.assertEqual(imports, [])
 
     async def test_partial_archive_is_exported_to_sensors(self):
         self.coordinator.archive["complete"] = False

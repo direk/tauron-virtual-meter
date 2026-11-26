@@ -204,8 +204,8 @@ class MeterCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Import historii wstrzymany na godzinę (%s); postęp zachowano", reason)
 
     async def export(self):
-        # Sensors expose partial values immediately. Each exporter still waits
-        # for scan completion before committing the final historical origin.
+        # Sensors expose partial totals as progress attributes, then publish
+        # the main counter and hourly statistics once its origin is established.
         for exporter in tuple(self.exporters):
             await exporter()
 

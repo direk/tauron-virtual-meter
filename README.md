@@ -14,8 +14,9 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
-**Poprawka po pierwszym wydaniu 0.0.1:** kod na gałęzi `main` pokazuje pobrane
-wartości jeszcze podczas importu historii i udostępnia diagnostykę postępu.
+**Poprawka po pierwszym wydaniu 0.0.1:** kod na gałęzi `main` pokazuje postęp
+importu i częściową sumę w atrybutach, bez zwiększania głównego stanu licznika
+przy dopisywaniu kolejnych miesięcy historii.
 Usuwa też błędne odrzucanie profili z komunikatem
 `Response contains a different date`. Po restarcie automatycznie przelicza
 oryginalne zapisane odpowiedzi odrzucone z tego powodu, bez ponownego pobierania.
@@ -69,11 +70,13 @@ oddzielnie, bez zgadywania godzin, do których się odnoszą.
 
 Sensor celowo nie deklaruje `state_class`: automatyczne statystyki HA nie mogą
 równolegle naliczać spóźnionych danych w momencie ich pobrania. Statystyki importuje
-wyłącznie integracja, z datami pomiarów. Pobrane wartości są widoczne od razu,
-także podczas skanowania. Wtedy `value_is_partial: true` oznacza sumę dotychczas
-pobranych pomiarów, która może rosnąć również przy uzupełnianiu starszych dni.
-Po pełnym skanowaniu publikowana jest cała historia godzinowa. Stan pozostaje
-`unknown` tylko wtedy, gdy nie ma jeszcze żadnych poprawnie odczytanych pomiarów.
+wyłącznie integracja, z datami pomiarów. Podczas skanowania pobrana suma jest
+dostępna w atrybucie `downloaded_energy_kwh`; `value_is_partial: true` oznacza,
+że pobieranie okresu jeszcze trwa. Główny stan jest wtedy `unknown` przy pierwszym
+imporcie albo zachowuje poprzednią wartość podczas ponownego skanowania działającej
+encji. Dopiero po zakończeniu skanowania publikowany jest stan licznika oraz
+pełna pobrana historia godzinowa. Dzięki temu przyrost sumy podczas dopisywania
+starszych dni nie udaje nowego zużycia w zwykłej Historii.
 Puste odpowiedzi nie kończą wyszukiwania.
 
 Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
@@ -81,6 +84,8 @@ Atrybuty diagnostyczne encji (Narzędzia deweloperskie → Stany):
 - `history_scan_next_day` — dzień, od którego będzie kontynuowany import.
 - `history_days_remaining` — liczba dni pozostałych do sprawdzenia.
 - `downloaded_interval_count` — liczba poprawnie odczytanych godzin dla tej encji.
+- `downloaded_energy_kwh` — suma dotychczas pobranych pomiarów; podczas importu
+  może rosnąć wskutek dodawania starszych dni i nie oznacza bieżącego zużycia.
 - `recovered_profile_count` — liczba zapisanych profili poboru/oddania odzyskanych
   po usunięciu błędnej kontroli pola daty (łącznie dla obu encji).
 - `last_history_attempt` — ostatnia próba pobrania archiwum.
@@ -110,6 +115,13 @@ Dla wykresu energii zużytej w poszczególnych godzinach użyj `change` zamiast
 `state`. Wykres zwykłej **Historii** nadal pokazuje chwile aktualizacji sensora,
 a nie zaimportowane dawne zmiany stanu. Import nie zapisuje wstecz rekordów
 `states` i nie modyfikuje bazy bezpośrednio.
+
+Schodki w zwykłej Historii w godzinach instalacji mogą pochodzić z wcześniejszej
+poprawki, która publikowała częściową sumę jako główny stan. To zapis przebiegu
+importu, a nie rozkład zużycia. Nowy kod nie usuwa zapisanych już stanów.
+Prawidłowy wykres godzinowy uzyskasz kartą statystyk powyżej (`state` dla stanu
+licznika, `change` dla energii w każdej godzinie); ponowne pobieranie archiwum
+nie jest potrzebne.
 
 ## Synchronizacja i pełny dostępny okres
 

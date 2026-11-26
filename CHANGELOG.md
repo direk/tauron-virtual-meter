@@ -2,6 +2,9 @@
 
 ## Poprawki na main po 0.0.1 (bez zmiany wersji)
 
+- Częściowa suma podczas importu jest teraz atrybutem `downloaded_energy_kwh`.
+  Główny licznik nie rośnie już wskutek dopisywania kolejnych miesięcy archiwum,
+  co wcześniej tworzyło mylące schodki w zwykłej Historii.
 - Dodano ikonę licznika z akcentami magenta do dokumentacji i katalogu
   `brand/` integracji (256 px oraz 512 px; przezroczyste tło).
 - Usunięto błędne odrzucanie profili dobowych z komunikatem
@@ -9,8 +12,8 @@
   wskazanego w zapytaniu, zgodnie z zachowaniem Tauron AMIplus.
 - Po restarcie automatycznie przeliczane są zapisane profile odrzucone przez
   tę kontrolę daty; bez ponownego pobierania i bez zerowania postępu.
-- Sensory pokazują częściową sumę dostępnych pomiarów od razu, bez czekania
-  na zakończenie skanowania całego okresu.
+- Sensory udostępniają częściową sumę dostępnych pomiarów w atrybutach,
+  bez czekania na zakończenie skanowania całego okresu.
 - Atrybuty encji pokazują liczbę pobranych godzin, pozostałych dni oraz ostatni
   błąd importu i termin ponowienia.
 - Dane częściowe nie trafiają do końcowej historii statystyk, dopóki nie zostanie

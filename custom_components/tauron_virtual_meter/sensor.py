@@ -32,6 +32,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             manufacturer="Tauron", model="Wirtualny licznik eLicznik",
         )
         self._attr_native_value = None
+        self._downloaded_energy_value = None
         self._last_measurement = None
 
     async def async_added_to_hass(self):
@@ -46,13 +47,16 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             return
         from datetime import timedelta
 
-        # The current value must not wait for the entire historical scan.
-        # It is explicitly marked partial until that scan has finished.
-        self._attr_native_value = stats[-1]["state"]
+        # Backfill changes the sum of downloaded data without representing
+        # new consumption. Expose progress as an attribute, never as changes
+        # to the main counter recorded at the time of the download.
+        self._downloaded_energy_value = stats[-1]["state"]
         self._last_measurement = (stats[-1]["start"] + timedelta(hours=1)).isoformat()
-        self.async_write_ha_state()
         if not self.coordinator.archive.get("complete"):
+            self.async_write_ha_state()
             return
+        self._attr_native_value = stats[-1]["state"]
+        self.async_write_ha_state()
         metadata = {
             "statistic_id": self.entity_id, "source": "recorder",
             "name": self.name, "has_sum": True,
@@ -82,6 +86,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "value_is_partial": not archive.get("complete", False),
             "history_days_remaining": remaining,
             "downloaded_interval_count": sum(len(values) for values in profiles.values()),
+            "downloaded_energy_kwh": getattr(self, "_downloaded_energy_value", None),
             "recovered_profile_count": archive.get("recovered_profile_count", 0),
             "last_history_attempt": archive.get("last_history_attempt"),
             "last_history_error": archive.get("last_history_error"),

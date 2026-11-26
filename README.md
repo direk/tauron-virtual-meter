@@ -12,6 +12,12 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
+[![Dodaj repozytorium do Home Assistant przez HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=direk&repository=tauron-virtual-meter&category=integration)
+
+Kliknij przycisk, wybierz swój Home Assistant i potwierdź dodanie repozytorium
+w HACS. Następnie zainstaluj integrację i uruchom ponownie Home Assistant.
+Przycisk wymaga skonfigurowanego HACS.
+
 Paczka instalacyjna: [wydanie 0.0.1](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.1).
 Rozpakuj plik `tauron_virtual_meter-0.0.1.zip`, a następnie:
 

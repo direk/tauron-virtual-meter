@@ -1,7 +1,7 @@
 {
   "domain": "tauron_virtual_meter",
   "name": "Tauron Virtual Meter",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "config_flow": true,
   "dependencies": [
     "recorder"

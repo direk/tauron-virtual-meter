@@ -1,4 +1,4 @@
-# Tauron Virtual Meter — wersja 0.0.6
+# Tauron Virtual Meter — wersja 0.0.7
 
 <img src="custom_components/tauron_virtual_meter/brand/icon@2x.png" alt="Ikona Tauron Virtual Meter — licznik energii z akcentami magenta" width="128" height="128">
 
@@ -14,12 +14,15 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
-**Aktualizacja do 0.0.6:** zainstaluj wydanie i wykonaj
-[jednorazowe ustawienie Recordera](#jednorazowe-ustawienie-recordera), a następnie
-uruchom ponownie cały Home Assistant. Integracja sama nada `state_class: total`
-po potwierdzeniu wykluczenia sensorów. Nie trzeba ustawiać `homeassistant.customize`.
+**Aktualizacja do 0.0.7:** zainstaluj wydanie i uruchom ponownie cały Home Assistant.
+Jeśli wykluczenia obu sensorów w Recorderze zostały już ustawione, nie trzeba
+ich zmieniać. Przy pierwszej instalacji lub aktualizacji ze starszych wersji
+wykonaj [jednorazowe ustawienie Recordera](#jednorazowe-ustawienie-recordera).
 Nie usuwaj statystyk, wpisu integracji ani lokalnego archiwum i nie rozpoczynaj
-importu od nowa. Zachowane pomiary zostaną ponownie zaimportowane pod te same encje.
+importu od nowa. Po wznowieniu synchronizacji integracja ponownie sprawdzi ostatni
+tydzień, aby uzupełnić dostępne w Tauronie opóźnione pomiary.
+Wersja 0.0.7 zapobiega blokowaniu profili godzinowych przez dodatkowe zestawienia
+lub odrzucenie pojedynczego profilu. Przyczyny błędów są dostępne w diagnostyce.
 Archiwum nadal znajduje się w `/config/.storage/tauron_virtual_meter/`;
 aktualizacja ze starszych wersji automatycznie przenosi pliki do tego katalogu.
 Szczegóły zmian znajdują się w [historii zmian](CHANGELOG.md).
@@ -30,8 +33,8 @@ Kliknij przycisk, wybierz swój Home Assistant i potwierdź dodanie repozytorium
 w HACS. Następnie zainstaluj integrację i uruchom ponownie Home Assistant.
 Przycisk wymaga skonfigurowanego HACS.
 
-Paczka instalacyjna: [wydanie 0.0.6](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.6).
-Rozpakuj plik `tauron_virtual_meter-0.0.6.zip`, a następnie:
+Paczka instalacyjna: [wydanie 0.0.7](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.7).
+Rozpakuj plik `tauron_virtual_meter-0.0.7.zip`, a następnie:
 
 1. Skopiuj katalog `custom_components/tauron_virtual_meter` do
    `/config/custom_components/tauron_virtual_meter` na urządzeniu z Home Assistant.
@@ -55,7 +58,8 @@ Instalacja przez HACS nie była jeszcze sprawdzana w działającym HA.
 
 ### Jednorazowe ustawienie Recordera
 
-**Wymagane zarówno przy świeżej instalacji, jak i przy aktualizacji do 0.0.6.**
+**Wymagane przy świeżej instalacji oraz aktualizacji z wersji starszej niż 0.0.6.**
+Jeśli wykluczenia już istnieją, nie trzeba ich ustawiać ponownie.
 Dla każdego licznika należy jednorazowo wyłączyć **automatyczne** zapisywanie
 sensorów energii pobranej i oddanej w Recorderze. Integracja sprawdza filtr i dopiero wtedy ustawia
 `state_class: total`. Samo dodanie klasy bez wykluczenia naliczałoby opóźnione
@@ -240,6 +244,24 @@ przeładuj integrację po poprawieniu konfiguracji. Odtworzy historię godzinow�
 z lokalnego archiwum po zakończeniu skanowania, bez ponownego pobierania wszystkich
 dawnych dni. Akcja `recorder.purge_entities` usuwa historię stanów; przycisk
 usuwania statystyk długoterminowych usuwa inny zbiór danych.
+
+### Diagnostyka cyklicznej synchronizacji
+
+Od wersji 0.0.7 dostępne są dodatkowe atrybuty:
+
+- `last_sync_attempt`, `last_sync_error` — czas ostatniej próby i błąd całej
+  synchronizacji, niezależnie od zakończonego już importu historii.
+- `last_sync_request` — ostatnio wykonywane zapytanie bieżącej synchronizacji.
+- `sync_issue_count`, `last_sync_issue_request`, `last_sync_issue` — liczba i opis
+  nieudanych zapytań w ostatniej próbie. Dodatkowe zestawienia mogą być niedostępne
+  mimo poprawnego pobrania godzinowych pomiarów.
+
+`last_successful_sync` oznacza zakończone odświeżenie, które przyjęło przynajmniej
+jeden profil dobowy; nie oznacza, że Tauron opublikował dane za wszystkie godziny.
+Aktualność samych pomiarów pokazuje `last_measurement_end`. Przy stanie
+`unavailable` sprawdź także Ustawienia → System → Dzienniki oraz kartę integracji:
+nieudany pierwszy odczyt po restarcie może uniemożliwić uruchomienie sensorów
+wraz z ich atrybutami diagnostycznymi.
 
 ## Synchronizacja i pełny dostępny okres
 

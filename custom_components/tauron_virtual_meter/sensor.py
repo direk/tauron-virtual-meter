@@ -101,12 +101,20 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
         skipped = archive.get("history_skipped_months", {})
         availability = archive.get("availability_months", {})
         last_month = next(reversed(availability), None)
+        sync_issues = archive.get("sync_issues", {})
+        last_sync_issue = next(reversed(sync_issues.values()), {})
         remaining = max(0, (self.coordinator.history_cursor - self.coordinator.history_start).days + 1)
         return {
             "history_scan_complete": archive.get("complete", False),
             "history_scan_next_day": archive["cursor"],
             "history_start": self.coordinator.history_start.isoformat(),
             "last_successful_sync": archive.get("last_sync"),
+            "last_sync_attempt": archive.get("last_sync_attempt"),
+            "last_sync_error": archive.get("last_sync_error"),
+            "last_sync_request": archive.get("last_sync_request"),
+            "sync_issue_count": len(sync_issues),
+            "last_sync_issue_request": last_sync_issue.get("request"),
+            "last_sync_issue": last_sync_issue.get("reason"),
             "last_measurement_end": self._last_measurement,
             "profile_issue_count": len(archive["issues"]),
             "value_is_partial": not archive.get("complete", False),

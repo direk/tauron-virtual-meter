@@ -157,23 +157,66 @@ class MeterCoordinator(DataUpdateCoordinator):
             progress["completed"].append(stage)
         return response
 
-    async def download_day(self, day, *, resume=False):
+    async def sync_response(self, request, key, fetch, *args, optional=False):
+        """Isolate rejected profiles and auxiliary failures during a refresh.
+
+        Authentication and explicit rate limits always stop the refresh. Missing
+        responses remain missing; retain earlier raw files and never insert zeros.
+        """
+        self.archive["last_sync_request"] = request
+        issue_key = f"{request['day']}.{request['kind']}.{request['direction']}"
+        try:
+            response = await fetch(*args)
+        except (AuthenticationError, RateLimitError):
+            raise
+        except (ApiError, ClientError, OSError, ValueError) as err:
+            if not optional and not isinstance(err, ApiResponseError):
+                raise
+            reason = str(err) if isinstance(err, ApiError) else type(err).__name__
+            self.archive.setdefault("sync_issues", {})[issue_key] = {
+                "request": request, "reason": reason,
+            }
+            if isinstance(err, ApiResponseError):
+                await self.raw_save(f"{key}.error", {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "request": request, "endpoint": err.endpoint, "response": err.response,
+                })
+            return None
+        self.archive.setdefault("sync_issues", {}).pop(issue_key, None)
+        await self.raw_save(key, response)
+        return response
+
+    async def download_day(self, day, *, resume=False, periodic=False):
+        accepted = 0
         for direction in ("consum", "oze"):
             if resume:
                 response = await self.history_response(day, "profile", direction, self.api.profile)
+            elif periodic:
+                response = await self.sync_response(
+                    {"day": day.isoformat(), "kind": "profile", "direction": direction},
+                    f"{day.isoformat()}.{direction}", self.api.profile, day, day, direction,
+                )
             else:
                 response = await self.api.profile(day, day, direction)
                 # Periodic refresh always fetches new data, regardless of cache.
                 await self.raw_save(f"{day.isoformat()}.{direction}", response)
-            self.apply_profile(day, direction, response)
+            if response is not None and self.apply_profile(day, direction, response):
+                accepted += 1
             await asyncio.sleep(0.5)
+        return accepted
 
     async def snapshots(self, today):
         start = today - timedelta(days=7)
         for direction in ("consum", "oze"):
-            await self.raw_save(f"latest_readings.{direction}", await self.api.readings(start, today, direction))
+            await self.sync_response(
+                {"day": start.isoformat(), "to": today.isoformat(), "kind": "readings", "direction": direction},
+                f"latest_readings.{direction}", self.api.readings, start, today, direction, optional=True,
+            )
             for profile, begin in (("month", today.replace(day=1)), ("year", today.replace(day=1, month=1))):
-                await self.raw_save(f"latest_{profile}.{direction}", await self.api.profile(begin, today, direction, profile))
+                await self.sync_response(
+                    {"day": begin.isoformat(), "to": today.isoformat(), "kind": profile, "direction": direction},
+                    f"latest_{profile}.{direction}", self.api.profile, begin, today, direction, profile, optional=True,
+                )
                 await asyncio.sleep(0.5)
         await self.raw_save("meters", self.api.meters)
 
@@ -237,25 +280,37 @@ class MeterCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         async with self.lock:
+            self.archive["last_sync_attempt"] = datetime.now(timezone.utc).isoformat()
+            self.archive["last_sync_request"] = None
+            self.archive["sync_issues"] = {}
             try:
                 await self.api.select(self.entry.data["meter_id"])
                 today = datetime.now(WARSAW).date()
-                await self.snapshots(today)
                 # Recheck the entire rolling week, including partial current day.
-                for offset in range(7, -1, -1):
+                accepted = 0
+                for offset in range(0, 8):
                     day = today - timedelta(days=offset)
                     if day >= self.history_start:
-                        await self.download_day(day)
+                        accepted += await self.download_day(day, periodic=True)
+                if not accepted:
+                    raise ApiError("No daily profiles accepted during refresh")
+                await self.snapshots(today)
                 self.archive["last_sync"] = datetime.now(timezone.utc).isoformat()
+                self.archive["last_sync_error"] = None
                 await self.store.async_save(self.archive)
                 await self.export()
                 return self.archive
             except AuthenticationError as err:
+                self.archive["last_sync_error"] = "AuthenticationError: credentials rejected"
+                await self.store.async_save(self.archive)
                 raise ConfigEntryAuthFailed(str(err)) from err
             except (ApiError, ClientError, OSError, ValueError) as err:
                 # Preserve downloaded days even after a partially successful sync.
+                reason = str(err) if isinstance(err, ApiError) else type(err).__name__
+                self.archive["last_sync_error"] = reason
                 await self.store.async_save(self.archive)
-                raise UpdateFailed("Nie udało się zsynchronizować danych eLicznik") from err
+                await self.export()
+                raise UpdateFailed(f"Nie udało się zsynchronizować danych eLicznik: {reason}") from err
 
     async def history_tick(self, _now=None):
         """Fourteen days per minute; checkpoint each complete day, resume on restart."""

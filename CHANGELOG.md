@@ -1,5 +1,23 @@
 # Historia zmian
 
+## 0.0.7 — 2026-11-28
+
+- Naprawiono cykliczną synchronizację: godzinowe profile są pobierane przed
+  dodatkowymi rejestrami i zestawieniami miesiąca/roku. Odrzucone lub niedostępne
+  dodatkowe zapytania są zapisywane jako diagnostyka i nie blokują pomiarów.
+- Odrzucenie pojedynczego profilu w cyklicznej synchronizacji nie blokuje drugiego
+  kierunku ani pozostałych dni. Wcześniejsze pomiary i poprawne surowe pliki są
+  zachowane; brak odpowiedzi nie jest zerowym zużyciem. Jeśli nie przyjęto żadnego
+  profilu dobowego, synchronizacja pozostaje nieudana.
+- Dni odświeżane są od najnowszego. Pobrane profile są eksportowane również wtedy,
+  gdy późniejsze zapytanie kończy się błędem połączenia. Logowanie i jawne limity
+  Taurona nadal przerywają pobieranie.
+- Dodano diagnostykę bieżącej synchronizacji: czas próby, ostatnie zapytanie,
+  przyczynę błędu i listę nieudanych zapytań. Przy błędzie komunikat HA zawiera
+  bezpieczny opis przyczyny zamiast wyłącznie ogólnego komunikatu.
+- Weryfikacja: 94 testy lokalne. Dwa nowe scenariusze odtwarzały błędy w 0.0.6;
+  sprawdzono również zachowanie archiwum, awarie połączeń, logowanie i limity.
+
 ## 0.0.6 — 2026-11-26
 
 - Naprawiono zgodność importowanych statystyk z kontrolą klasy stanu HA:

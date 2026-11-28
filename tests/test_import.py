@@ -656,6 +656,114 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             third = profile_model.cumulative_statistics(meter.archive["profiles"]["consum"])
             self.assertEqual(third[-1]["sum"], 72)
 
+    async def test_rejected_auxiliary_snapshots_do_not_block_periodic_hourly_data(self):
+        meter = self.coordinator
+        meter.raw_save = AsyncMock()
+        meter.export = AsyncMock()
+        self.entry.options["history_start"] = "2000-01-01"
+
+        async def profile(start, end, direction, period="full time"):
+            if period != "full time":
+                raise self.api_module.ApiResponseError("/energia/api", {"success": False})
+            return {"success": True, "data": {"values": [1]*24}}
+
+        meter.api = types.SimpleNamespace(
+            select=AsyncMock(), profile=AsyncMock(side_effect=profile), meters={},
+            readings=AsyncMock(side_effect=self.api_module.ApiResponseError("/odczyty/api", {"success": False})),
+        )
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter._async_update_data()
+        self.assertEqual(len(meter.archive["profiles"]["consum"]), 8)
+        self.assertEqual(len(meter.archive["profiles"]["oze"]), 8)
+        meter.export.assert_awaited_once()
+        self.assertIsNotNone(meter.archive["last_sync"])
+        self.assertEqual(len(meter.archive["sync_issues"]), 6)
+        self.assertIsNone(meter.archive["last_sync_error"])
+        self.assertNotIn("latest_readings.consum", [call.args[0] for call in meter.raw_save.await_args_list])
+
+    async def test_rejected_current_export_profile_does_not_block_import_or_prior_days(self):
+        meter = self.coordinator
+        meter.raw_save = AsyncMock()
+        meter.snapshots = AsyncMock()
+        meter.export = AsyncMock()
+        self.entry.options["history_start"] = "2000-01-01"
+        today = self.module.datetime.now(self.module.WARSAW).date()
+
+        async def profile(start, end, direction):
+            if start == today and direction == "oze":
+                raise self.api_module.ApiResponseError("/energia/api", {"success": False})
+            return {"success": True, "data": {"values": [1]*24}}
+
+        meter.api = types.SimpleNamespace(select=AsyncMock(), profile=AsyncMock(side_effect=profile))
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            await meter._async_update_data()
+        self.assertEqual(len(meter.archive["profiles"]["consum"]), 8)
+        self.assertEqual(len(meter.archive["profiles"]["oze"]), 7)
+        meter.export.assert_awaited_once()
+        self.assertEqual(len(meter.archive["sync_issues"]), 1)
+        self.assertNotIn(today.isoformat(), meter.archive["profiles"]["oze"])
+
+    async def test_all_rejected_profiles_keep_last_success_and_existing_measurements(self):
+        meter = self.coordinator
+        meter.raw_save = AsyncMock()
+        meter.snapshots = AsyncMock()
+        meter.export = AsyncMock()
+        self.entry.options["history_start"] = "2000-01-01"
+        meter.archive["last_sync"] = "2026-11-26T12:00:00+00:00"
+        meter.archive["profiles"]["consum"]["2026-11-25"] = {"2026-11-25T00:00:00+00:00": "7"}
+        previous = json.loads(json.dumps(meter.archive["profiles"]))
+        meter.api = types.SimpleNamespace(
+            select=AsyncMock(), profile=AsyncMock(side_effect=self.api_module.ApiResponseError("/energia/api", {"success": False})),
+        )
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            with self.assertRaises(self.module.UpdateFailed):
+                await meter._async_update_data()
+        self.assertEqual(meter.archive["profiles"], previous)
+        self.assertEqual(meter.archive["last_sync"], "2026-11-26T12:00:00+00:00")
+        self.assertEqual(meter.archive["last_sync_error"], "No daily profiles accepted during refresh")
+        self.assertEqual(len(meter.archive["sync_issues"]), 16)
+        meter.snapshots.assert_not_awaited()
+
+    async def test_optional_snapshot_connection_failure_is_diagnostic_and_keeps_previous_raw(self):
+        meter = self.coordinator
+        meter.raw_save = AsyncMock()
+        request = {"day": "2026-11-26", "kind": "readings", "direction": "consum"}
+        result = await meter.sync_response(request, "latest_readings.consum", AsyncMock(
+            side_effect=self.api_module.TransientApiError("Tauron connection failed")
+        ), optional=True)
+        self.assertIsNone(result)
+        meter.raw_save.assert_not_awaited()
+        self.assertEqual(meter.archive["sync_issues"]["2026-11-26.readings.consum"]["reason"], "Tauron connection failed")
+
+    async def test_optional_requests_never_swallow_authentication_or_rate_limits(self):
+        meter = self.coordinator
+        meter.raw_save = AsyncMock()
+        request = {"day": "2026-11-26", "kind": "readings", "direction": "consum"}
+        for error in (self.api_module.AuthenticationError("Credentials rejected"), self.api_module.RateLimitError("limit")):
+            with self.subTest(error=type(error).__name__):
+                with self.assertRaises(type(error)):
+                    await meter.sync_response(request, "latest_readings.consum", AsyncMock(side_effect=error), optional=True)
+        meter.raw_save.assert_not_awaited()
+
+    async def test_failed_later_daily_request_still_exports_already_downloaded_data(self):
+        meter = self.coordinator
+        meter.raw_save = AsyncMock()
+        meter.snapshots = AsyncMock()
+        meter.export = AsyncMock()
+        self.entry.options["history_start"] = "2000-01-01"
+        today = self.module.datetime.now(self.module.WARSAW).date()
+        meter.api = types.SimpleNamespace(select=AsyncMock(), profile=AsyncMock(side_effect=[
+            {"success": True, "data": {"values": [1]*24}},
+            self.api_module.TransientApiError("Tauron connection failed"),
+        ]))
+        with patch.object(self.module.asyncio, "sleep", new=AsyncMock()):
+            with self.assertRaises(self.module.UpdateFailed):
+                await meter._async_update_data()
+        self.assertEqual(len(meter.archive["profiles"]["consum"][today.isoformat()]), 24)
+        self.assertEqual(meter.archive["last_sync_error"], "Tauron connection failed")
+        self.assertNotIn("last_sync", meter.archive)
+        meter.export.assert_awaited_once()
+
     async def test_rejected_month_summary_falls_back_to_daily_scan(self):
         meter = self.prepare_month_discovery()
         meter.api.profile.side_effect = self.api_module.ApiResponseError("/energia/api", {"success": False})

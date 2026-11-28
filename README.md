@@ -1,4 +1,4 @@
-# Tauron Virtual Meter — wersja 0.0.7
+# Tauron Virtual Meter — wersja 0.0.8
 
 <img src="custom_components/tauron_virtual_meter/brand/icon@2x.png" alt="Ikona Tauron Virtual Meter — licznik energii z akcentami magenta" width="128" height="128">
 
@@ -14,15 +14,17 @@ liczników i ograniczenia historyczne API trzeba sprawdzić w praktyce.
 
 ## Instalacja
 
-**Aktualizacja do 0.0.7:** zainstaluj wydanie i uruchom ponownie cały Home Assistant.
+**Aktualizacja do 0.0.8:** zainstaluj wydanie i uruchom ponownie cały Home Assistant.
 Jeśli wykluczenia obu sensorów w Recorderze zostały już ustawione, nie trzeba
 ich zmieniać. Przy pierwszej instalacji lub aktualizacji ze starszych wersji
 wykonaj [jednorazowe ustawienie Recordera](#jednorazowe-ustawienie-recordera).
 Nie usuwaj statystyk, wpisu integracji ani lokalnego archiwum i nie rozpoczynaj
 importu od nowa. Po wznowieniu synchronizacji integracja ponownie sprawdzi ostatni
 tydzień, aby uzupełnić dostępne w Tauronie opóźnione pomiary.
-Wersja 0.0.7 zapobiega blokowaniu profili godzinowych przez dodatkowe zestawienia
-lub odrzucenie pojedynczego profilu. Przyczyny błędów są dostępne w diagnostyce.
+Wersja 0.0.8 zapisuje wspólną przerwę po limicie logowań lub HTTP 429.
+Próby uruchomienia integracji, synchronizacja i import historii nie kontaktują
+się z Tauronem przed terminem `api_retry_after`, również po restarcie HA.
+Lokalny termin ponowienia nie gwarantuje odblokowania konta przez Tauron.
 Archiwum nadal znajduje się w `/config/.storage/tauron_virtual_meter/`;
 aktualizacja ze starszych wersji automatycznie przenosi pliki do tego katalogu.
 Szczegóły zmian znajdują się w [historii zmian](CHANGELOG.md).
@@ -33,8 +35,8 @@ Kliknij przycisk, wybierz swój Home Assistant i potwierdź dodanie repozytorium
 w HACS. Następnie zainstaluj integrację i uruchom ponownie Home Assistant.
 Przycisk wymaga skonfigurowanego HACS.
 
-Paczka instalacyjna: [wydanie 0.0.7](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.7).
-Rozpakuj plik `tauron_virtual_meter-0.0.7.zip`, a następnie:
+Paczka instalacyjna: [wydanie 0.0.8](https://github.com/direk/tauron-virtual-meter/releases/tag/v0.0.8).
+Rozpakuj plik `tauron_virtual_meter-0.0.8.zip`, a następnie:
 
 1. Skopiuj katalog `custom_components/tauron_virtual_meter` do
    `/config/custom_components/tauron_virtual_meter` na urządzeniu z Home Assistant.
@@ -262,6 +264,24 @@ Aktualność samych pomiarów pokazuje `last_measurement_end`. Przy stanie
 `unavailable` sprawdź także Ustawienia → System → Dzienniki oraz kartę integracji:
 nieudany pierwszy odczyt po restarcie może uniemożliwić uruchomienie sensorów
 wraz z ich atrybutami diagnostycznymi.
+
+### Limit logowań Taurona
+
+Komunikat `Tauron login limit: retry later` oznacza, że odpowiedź Taurona zawiera
+informację o przekroczeniu liczby logowań. Nie oznacza błędnego hasła. Nie usuwaj
+integracji ani archiwum. W wersji 0.0.7 ponowne próby uruchomienia wpisu i
+synchronizacja bieżąca nie respektowały przerwy zapisanej dla importu historii.
+Na czas blokady można wyłączyć wpis integracji w Ustawienia → Urządzenia i usługi,
+żeby zatrzymać automatyczne próby, a później ponownie go włączyć.
+
+Od wersji 0.0.8 integracja zapisuje wspólny termin `api_retry_after` dla
+uruchomienia, synchronizacji i importu historii. Przed tym terminem nie wysyła
+zapytań do Taurona, również po restarcie HA. Przerwa wynosi co najmniej godzinę
+lub dłuższe `Retry-After`, jeśli Tauron je poda. Bez takiego nagłówka godzina jest
+lokalnym odstępem ponowienia, a nie gwarancją odblokowania konta przez Tauron.
+W czasie przerwy karta nieudanego uruchomienia pokazuje termin następnej
+najwcześniejszej próby w strefie Europe/Warsaw. Faktyczna próba może nastąpić
+później, zgodnie z harmonogramem HA.
 
 ## Synchronizacja i pełny dostępny okres
 

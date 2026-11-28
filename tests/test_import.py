@@ -764,6 +764,65 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("last_sync", meter.archive)
         meter.export.assert_awaited_once()
 
+    async def test_periodic_login_limit_pauses_setup_retries_and_history_without_extending_deadline(self):
+        meter = self.coordinator
+        meter.api = types.SimpleNamespace(select=AsyncMock(side_effect=self.api_module.RateLimitError("Tauron login limit: retry later")))
+        meter.export = AsyncMock()
+        with self.assertRaises(self.module.UpdateFailed):
+            await meter._async_update_data()
+        deadline = meter.archive.get("api_retry_after")
+        self.assertIsNotNone(deadline)
+        with self.assertRaises(self.module.UpdateFailed):
+            await meter._async_update_data()
+        await meter.history_tick()
+        meter.api.select.assert_awaited_once()
+        self.assertEqual(meter.archive["api_retry_after"], deadline)
+
+    async def test_history_rate_limit_also_blocks_periodic_refresh(self):
+        meter = self.coordinator
+        meter.api = types.SimpleNamespace(select=AsyncMock(side_effect=self.api_module.RateLimitError("limit", 7200)))
+        await meter.history_tick()
+        deadline = meter.archive["history_retry_after"]
+        with self.assertRaises(self.module.UpdateFailed):
+            await meter._async_update_data()
+        meter.api.select.assert_awaited_once()
+        self.assertEqual(meter.archive["api_retry_after"], deadline)
+
+    async def test_rate_limit_pause_survives_coordinator_recreation(self):
+        deadline = (self.module.datetime.now(self.module.timezone.utc) + self.module.timedelta(hours=2)).isoformat()
+        archived = dict(self.coordinator.archive, api_retry_after=deadline)
+        meter = self.module.MeterCoordinator(types.SimpleNamespace(), self.entry, object())
+        meter.store.async_load = AsyncMock(return_value=archived)
+        meter.api = types.SimpleNamespace(select=AsyncMock())
+        await meter.load()
+        with self.assertRaises(self.module.UpdateFailed):
+            await meter._async_update_data()
+        await meter.history_tick()
+        meter.api.select.assert_not_awaited()
+        self.assertEqual(meter.archive["api_retry_after"], deadline)
+
+    async def test_expired_rate_limit_allows_a_real_connection_attempt(self):
+        meter = self.coordinator
+        meter.archive["api_retry_after"] = (
+            self.module.datetime.now(self.module.timezone.utc) - self.module.timedelta(seconds=1)
+        ).isoformat()
+        meter.api = types.SimpleNamespace(select=AsyncMock(side_effect=self.api_module.TransientApiError("Tauron connection failed")))
+        with self.assertRaises(self.module.UpdateFailed):
+            await meter._async_update_data()
+        meter.api.select.assert_awaited_once()
+        self.assertIsNone(meter.archive["api_retry_after"])
+        self.assertEqual(meter.archive["last_sync_error"], "Tauron connection failed")
+
+    async def test_legacy_history_rate_limit_blocks_polling_even_after_scan_completed(self):
+        meter = self.coordinator
+        deadline = (self.module.datetime.now(self.module.timezone.utc) + self.module.timedelta(hours=2)).isoformat()
+        meter.archive.update(complete=True, history_retry_kind="rate_limit", history_retry_after=deadline)
+        meter.api = types.SimpleNamespace(select=AsyncMock())
+        with self.assertRaises(self.module.UpdateFailed):
+            await meter._async_update_data()
+        meter.api.select.assert_not_awaited()
+        self.assertEqual(meter.api_retry_after.isoformat(), deadline)
+
     async def test_rejected_month_summary_falls_back_to_daily_scan(self):
         meter = self.prepare_month_discovery()
         meter.api.profile.side_effect = self.api_module.ApiResponseError("/energia/api", {"success": False})

@@ -111,6 +111,7 @@ class VirtualMeter(CoordinatorEntity, SensorEntity):
             "last_successful_sync": archive.get("last_sync"),
             "last_sync_attempt": archive.get("last_sync_attempt"),
             "last_sync_error": archive.get("last_sync_error"),
+            "api_retry_after": self.coordinator.api_retry_after.isoformat() if self.coordinator.api_retry_after else None,
             "last_sync_request": archive.get("last_sync_request"),
             "sync_issue_count": len(sync_issues),
             "last_sync_issue_request": last_sync_issue.get("request"),

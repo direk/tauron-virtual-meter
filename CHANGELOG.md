@@ -1,5 +1,19 @@
 # Historia zmian
 
+## 0.0.8 — 2026-11-28
+
+- Naprawiono obsługę limitów logowania i HTTP 429: synchronizacja bieżąca,
+  ponowne uruchomienie wpisu po błędzie i import historii respektują wspólny,
+  zapisany w archiwum termin `api_retry_after`.
+- Ponowna próba przed terminem nie kontaktuje się z Tauronem i nie przesuwa
+  terminu. Przerwa przetrwa restart HA, respektuje dłuższe `Retry-After` i
+  uwzględnia termin limitu zapisany przez starsze wydania dla importu historii.
+- Komunikat nieudanego uruchomienia podaje termin następnej dozwolonej próby
+  w strefie Europe/Warsaw. Jest to termin lokalnej przerwy, a nie potwierdzony
+  przez Tauron czas odblokowania konta.
+- Weryfikacja: 99 testów lokalnych, w tym odtworzenie problemu w 0.0.7,
+  zachowanie przerwy po ponownym utworzeniu koordynatora i wznowienie po terminie.
+
 ## 0.0.7 — 2026-11-28
 
 - Naprawiono cykliczną synchronizację: godzinowe profile są pobierane przed

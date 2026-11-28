@@ -44,6 +44,28 @@ class MeterCoordinator(DataUpdateCoordinator):
     def history_cursor(self):
         return date.fromisoformat(self.archive["cursor"])
 
+    @property
+    def api_retry_after(self):
+        """One persisted rate-limit pause for startup, polling and history.
+
+        Also respect rate-limit deadlines written by older releases, even when
+        the history scan has already completed.
+        """
+        deadlines = []
+        if value := self.archive.get("api_retry_after"):
+            deadlines.append(datetime.fromisoformat(value))
+        if (self.archive.get("history_retry_kind") == "rate_limit"
+                and (value := self.archive.get("history_retry_after"))):
+            deadlines.append(datetime.fromisoformat(value))
+        return max(deadlines) if deadlines else None
+
+    def _record_rate_limit(self, error):
+        deadline = datetime.now(timezone.utc) + timedelta(seconds=error.retry_after_seconds)
+        if previous := self.api_retry_after:
+            deadline = max(previous, deadline)
+        self.archive["api_retry_after"] = deadline.isoformat()
+        return deadline
+
     async def load(self):
         await async_migrate_storage(self.hass, self.entry.entry_id)
         self.archive = await self.store.async_load() or {
@@ -280,6 +302,13 @@ class MeterCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         async with self.lock:
+            deadline = self.api_retry_after
+            if deadline and datetime.now(timezone.utc) < deadline:
+                # HA may retry failed setup sooner than the polling interval.
+                # Do not call the server or extend the pause on those retries.
+                local_deadline = deadline.astimezone(WARSAW).isoformat(timespec="seconds")
+                raise UpdateFailed(f"Limit Taurona: przerwa w połączeniach do {local_deadline}")
+            self.archive["api_retry_after"] = None
             self.archive["last_sync_attempt"] = datetime.now(timezone.utc).isoformat()
             self.archive["last_sync_request"] = None
             self.archive["sync_issues"] = {}
@@ -306,11 +335,17 @@ class MeterCoordinator(DataUpdateCoordinator):
                 raise ConfigEntryAuthFailed(str(err)) from err
             except (ApiError, ClientError, OSError, ValueError) as err:
                 # Preserve downloaded days even after a partially successful sync.
+                if isinstance(err, RateLimitError):
+                    self._record_rate_limit(err)
                 reason = str(err) if isinstance(err, ApiError) else type(err).__name__
                 self.archive["last_sync_error"] = reason
                 await self.store.async_save(self.archive)
                 await self.export()
-                raise UpdateFailed(f"Nie udało się zsynchronizować danych eLicznik: {reason}") from err
+                message = f"Nie udało się zsynchronizować danych eLicznik: {reason}"
+                if isinstance(err, RateLimitError):
+                    local_deadline = self.api_retry_after.astimezone(WARSAW).isoformat(timespec="seconds")
+                    message += f"; przerwa w połączeniach do {local_deadline}"
+                raise UpdateFailed(message) from err
 
     async def history_tick(self, _now=None):
         """Fourteen days per minute; checkpoint each complete day, resume on restart."""
@@ -337,6 +372,9 @@ class MeterCoordinator(DataUpdateCoordinator):
         if self.lock.locked() or self.archive.get("complete"):
             return
         if self._retry_after and datetime.now(timezone.utc) < self._retry_after:
+            return
+        deadline = self.api_retry_after
+        if deadline and datetime.now(timezone.utc) < deadline:
             return
         async with self.lock:
             self.archive["last_history_attempt"] = datetime.now(timezone.utc).isoformat()
@@ -394,7 +432,8 @@ class MeterCoordinator(DataUpdateCoordinator):
                 else:
                     delay = 3600
                     kind = "api_error"
-                self._retry_after = datetime.now(timezone.utc) + timedelta(seconds=delay)
+                self._retry_after = (self._record_rate_limit(err) if isinstance(err, RateLimitError)
+                                     else datetime.now(timezone.utc) + timedelta(seconds=delay))
                 # Only our fixed-message API errors are exposed; third-party
                 # exception text can contain request details.
                 reason = str(err) if isinstance(err, ApiError) else type(err).__name__
